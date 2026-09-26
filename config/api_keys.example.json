@@ -1,0 +1,13 @@
+{
+    "gemini_api_key": "",
+    "os_system": "Windows",
+    "assistant_name": "JARVIS",
+    "user_name": "Sir",
+    "voice_name": "Charon",
+    "hud_style": "face",
+    "wake_word_enabled": false,
+    "push_to_talk_enabled": false,
+    "input_device": "",
+    "output_device": "",
+    "morning_brief_enabled": false
+}
