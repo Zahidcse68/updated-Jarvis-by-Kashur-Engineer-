@@ -275,18 +275,73 @@ It is held in memory only, deliberately: writing it to disk would make a fresh l
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Quick Start & How to Run
 
+### Method 1: Automatic 1-Click Launch (Recommended for Windows)
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Zahidcse68/updated-Jarvis-by-Kashur-Engineer-.git
+   cd updated-Jarvis-by-Kashur-Engineer-
+   ```
+2. Double-click **`run.bat`**.
+   - It will automatically set up the virtual environment, install requirements, and launch MARK LIV.
+3. On first launch, enter your free Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey) and click **`▸ INITIALISE SYSTEMS`**.
+
+---
+
+### Method 2: Manual Setup (Windows, macOS, Linux)
 ```bash
-git clone https://github.com/FatihMakes/Mark-LIV.git
-cd Mark-LIV
-python setup.py        # installs deps for YOUR OS + the browser automation engine
+# 1. Clone repository
+git clone https://github.com/Zahidcse68/updated-Jarvis-by-Kashur-Engineer-.git
+cd updated-Jarvis-by-Kashur-Engineer-
+
+# 2. Create and activate virtual environment
+python -m venv .venv
+# On Windows:
+.\.venv\Scripts\activate
+# On macOS / Linux:
+source .venv/bin/activate
+
+# 3. Install OS-tailored dependencies
+python setup.py
+
+# 4. Start MARK LIV
 python main.py
 ```
 
-`setup.py` only ever installs what your operating system needs — the Windows-only libraries are skipped automatically on macOS and Linux, and vice-versa. It also checks your Python version up front, so a wrong interpreter fails with a sentence instead of a wall of pip output. Prefer to do it by hand? `pip install -r requirements.txt` works too.
+---
 
-> ⚠️ **Installation Note:** If you hit a `ModuleNotFoundError` for an OS-specific package, install it with `pip install <module_name>`. The optional **wake word** engine is *not* installed here — grab it in one click from **⚙ → WAKE WORD** inside the app.
+## 🎙️ How to Use & Voice Commands Reference
+
+You can talk to MARK LIV naturally in **any language** (English, Hindi, Urdu, Kashmiri, etc.) or type in the bottom command input.
+
+### 🌟 Example Voice Commands
+
+| Category | Example Voice Prompt | What It Does |
+|---|---|---|
+| **👀 Vision & Screen** | *"Look at my screen and summarize what's open"* | Captures current desktop screen and analyzes it |
+| **📷 Webcam Vision** | *"Open camera and tell me what you see"* | Captures webcam snapshot and describes items |
+| **🚀 App Launcher** | *"Open Spotify / VS Code / Chrome"* | Launches native apps and programs |
+| **🎵 YouTube & Media** | *"Play interstellar soundtrack on YouTube"* | Searches and starts video playback directly |
+| **🔍 Live Search & News** | *"What are the latest tech headlines today?"* | Fetches grounded live Google search & news |
+| **💻 Code Helper** | *"Review this Python function and find bugs"* | Analyzes, explains, or generates clean code |
+| **⚙️ System Control** | *"Set volume to 70% / Mute audio / Turn off WiFi"* | Controls system volume, brightness, power |
+| **🧠 Recall Memory** | *"What projects was I working on yesterday?"* | Retrieves facts from local persistent memory |
+| **⏰ Reminders** | *"Remind me to drink water in 30 minutes"* | Creates native OS notifications |
+| **🌤️ Weather** | *"What is the weather forecast for today?"* | Live weather report for your location |
+| **🛫 Flight Search** | *"Find flights from Delhi to Dubai next Friday"* | Searches live prices and itineraries |
+
+---
+
+## ⌨️ Controls & Shortcuts
+
+- **Push-to-Talk**: Hold **`Ctrl + Space`** to speak (releases mic when released).
+- **Wake Word**: Opt-in "Hey Jarvis" hands-free activation from **⚙ → WAKE WORD**.
+- **Settings Overlay**: Click **`⚙`** in the header to customize:
+  - 🎨 UI Themes (**🔴 ULTRON**, **🤖 JARVIS**, **🟢 MATRIX**, **🟠 AMBER**) or custom hex/wheel
+  - 🎙️ Assistant Voice (**Aoede**, **Charon**, **Puck**, **Fenrir**, **Kore**)
+  - 🎧 Audio Input / Output Device Selectors
+  - 🧩 Plugin Manager (Enable / Disable installed skills)
 
 ---
 
@@ -299,8 +354,8 @@ python main.py
 | **Microphone** | Required for voice interaction (and for the "Hey Jarvis" wake word) |
 | **Speakers** | Required for voice replies |
 | **API Key** | Free Gemini API key (entered on first launch → `config/api_keys.json`) |
-| **GPU** | **Not required.** The avatar is rendered in software |
-| **Wake word** *(optional)* | One-click download from ⚙ → WAKE WORD (`openwakeword`, a few MB, fully local) |
+| **GPU** | **Not required.** The avatar and Ultron reactor are rendered in software |
+| **Wake word** *(optional)* | One-click download from ⚙ → WAKE WORD (`openwakeword`, fully local) |
 
 ---
 
@@ -308,100 +363,37 @@ python main.py
 
 ```
 Mark LIV/
-├── main.py                   # Core loop — Gemini Live session, audio I/O, viseme extraction, tool dispatch
-├── ui.py                     # PyQt6 HUD — avatar canvas, waveform, log panel, settings drawer, camera feed
-├── setup.py                  # OS-aware installer (skips wrong-OS dependencies, checks your Python)
-├── .gitignore                # Keeps your API key, TLS key and memories out of the repository
-├── plugins/
-│   ├── quiz.py               # Interactive quiz — JARVIS writes the questions, you answer on screen
-│   ├── document_review.py    # Contracts and policies in plain language, ordered by what matters
-│   ├── _google_core.py       # Shared OAuth for the Gmail/Calendar plugins (not a plugin itself)
-│   ├── _printer_core.py      # Shared printer connectivity (not a plugin itself)
-│   ├── _template.py          # Copy this to write a new plugin — one file, drop in, done
-│   └── ...                   # Drop-in skills (each self-describes via a PLUGIN dict + run())
-├── actions/                  # Bundled skills — each self-describes via a TOOL dict + handler
-│   ├── web_search.py         # Gemini + DDG parallel search (news, research, price, compare)
-│   ├── screen_processor.py   # Screen & webcam capture for vision
-│   ├── background_monitor.py # User-configured topic watching — daily DDG check
-│   ├── proactive.py          # Proactive 2.0 — time/context/rotation-aware check-ins
-│   ├── reminder.py           # OS-native scheduled notifications
-│   ├── system_monitor.py     # CPU / RAM / GPU / temperature telemetry
-│   ├── computer_settings.py  # Volume, brightness, WiFi, power (per-OS)
-│   ├── computer_control.py   # Keyboard shortcuts, mouse, window management
-│   ├── open_app.py           # Application launcher (per-OS name map)
-│   ├── browser_control.py    # Web browser control
-│   ├── file_controller.py    # File system operations
-│   ├── file_processor.py     # Document reading and summarization
-│   ├── send_message.py       # Messaging integration
-│   ├── weather_report.py     # Live weather data
-│   ├── flight_finder.py      # Flight search
-│   ├── youtube_video.py      # YouTube playback control
-│   ├── game_updater.py       # Game update management (Steam / Epic)
-│   ├── code_helper.py        # Code review and generation
-│   ├── dev_agent.py          # Developer task agent
-│   └── desktop.py            # Desktop and taskbar control
-├── memory/
-│   ├── memory_manager.py     # Load/save long_term.json — sessions, monitors, identity
-│   ├── config_manager.py     # api_keys.json access — key, OS, name, voice, colour, toggles
-│   └── long_term.json        # Persistent store — created on first run
-├── core/
-│   ├── prompt.txt            # All prompt wording — {tokens} are filled from the live system at startup
-│   ├── avatar.py             # Avatar renderer — lighting, pose, expression, mouth (QPainter)
-│   ├── avatar_mesh.py        # Head geometry — loads the face, generates skull/neck/rigs
-│   ├── face_model.obj        # The face itself (MediaPipe canonical model, Apache-2.0, 25 KB)
-│   ├── viseme.py             # Transcript → mouth shapes, fused with the audio's timing
-│   ├── echo.py               # Tells your voice from the assistant's own echo; self-calibrating
-│   ├── hotkey.py             # Push-to-talk chord — global on Windows, windowed fallback elsewhere
-│   ├── undo.py               # One shared undo stack — actions register how to reverse themselves
-│   ├── confirm.py            # Irreversible-action gate — the token is issued by the UI, not the model
-│   ├── audio_devices.py      # Microphone / speaker list — filtered, measured, resolved by name
-│   ├── plugin_loader.py      # Plugin engine — discovery, validation, crash isolation
-│   ├── action_loader.py      # Bundled-action engine — the built-in twin of plugin_loader
-│   └── wake_word.py          # Local "Hey Jarvis" detector — own thread, offline, opt-in
-└── config/
-    ├── api_keys.json         # API key, name, voice, colour, toggles — created on first launch (git-ignored)
-    └── certs/                # Self-signed TLS pair for the phone dashboard — generated locally (git-ignored)
+├── main.py                   # Core loop — Gemini Live session, audio I/O, tool dispatch
+├── ui.py                     # PyQt6 HUD — Ultron Core, waveform, log panel, settings drawer
+├── setup.py                  # OS-aware installer (checks Python & installs dependencies)
+├── run.bat                   # 1-click Windows launcher
+├── requirements.txt          # Python dependencies
+├── .gitignore                # Protects API keys, TLS certs, and local memory
+├── plugins/                  # Drop-in autonomous extensions
+├── actions/                  # Built-in skills (search, vision, apps, system control, etc.)
+├── memory/                   # Local persistent memory & configuration manager
+└── core/                     # Voice synthesis, audio DSP, visemes, and models
 ```
 
 ---
 
-## 🙏 Third-Party Assets
+## 🔒 Your Data & Privacy
 
-| Asset | Source | Licence |
-| --- | --- | --- |
-| `core/face_model.obj` | [MediaPipe](https://github.com/google-ai-edge/mediapipe) canonical face model — 468 vertices of measured human face geometry | Apache License 2.0 |
+Everything stays on your machine. There is no external server, no telemetry, and no accounts required.
 
----
-
-## 🔒 Your Data
-
-Everything stays on your machine. There is no MARK server, no telemetry and no account.
-
-| What | Where | Notes |
-|---|---|---|
-| Gemini API key, plugin credentials | `config/api_keys.json` | **Plaintext.** Anyone with your user account can read it. Treat it like a password file. |
-| Dashboard TLS certificate + private key | `config/certs/` | Generated locally, self-signed, never leaves the machine. |
-| What the assistant remembers about you | `memory/long_term.json` | Delete the file to make it forget everything. |
-
-All three are listed in `.gitignore`, so a fork or a pull request cannot leak them by accident. **If you have already committed `config/api_keys.json` anywhere public, revoke that key** at [aistudio.google.com](https://aistudio.google.com/app/apikey) and generate a new one — removing the file in a later commit does not remove it from the history.
-
-Your voice is streamed to Google's Gemini Live API while a session is open; that is the one thing that leaves your computer, and it stops when you mute or close the app.
-
----
-
-## ⚠️ License
-
-Personal and non-commercial use only.
-Licensed under **[Creative Commons BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)**.
+- **API Keys & Local Storage**: Kept strictly in `config/api_keys.json` (git-ignored).
+- **Local Memory**: Facts are stored on-disk in `memory/long_term.json`.
+- **Audio Stream**: Direct end-to-end connection between your computer and Google Gemini Live API.
 
 ---
 
 ## 👤 Connect with the Creator
 
-Engineered by a developer building a real-world JARVIS-style assistant.
-⭐ **Star the repository to support the journey to Mark 100.**
+⚡ **MARK LIV - Custom Edition by Kashur Engineer**
+
+⭐ **Star the repository to support the project!**
 
 | Platform | Link |
 | --- | --- |
-| YouTube | [@FatihMakes](https://www.youtube.com/@FatihMakes) |
-| Instagram | [@fatihmakes](https://www.instagram.com/fatihmakes) |
+| 📸 Instagram | **[@kashurengineer](https://www.instagram.com/kashurengineer/)** |
+| 🐙 GitHub | **[@Zahidcse68](https://github.com/Zahidcse68)** |
