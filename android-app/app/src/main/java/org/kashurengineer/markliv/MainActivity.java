@@ -338,68 +338,80 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                     MediaType.parse("application/json; charset=utf-8")
             );
 
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + apiKey;
-
-            Request request = new Request.Builder()
-                    .url(url)
-                    .post(body)
-                    .build();
-
             runJs("setAssistantState('THINKING', 0.3);");
-
-            httpClient.newCall(request).enqueue(new Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    mainHandler.post(() -> {
-                        runJs("setAssistantState('ONLINE', 0.1); appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");");
-                    });
-                }
-
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    if (response.isSuccessful() && response.body() != null) {
-                        try {
-                            String resStr = response.body().string();
-                            JSONObject json = new JSONObject(resStr);
-                            JSONArray candidates = json.optJSONArray("candidates");
-                            if (candidates != null && candidates.length() > 0) {
-                                JSONObject candidate = candidates.getJSONObject(0);
-                                JSONObject contentObj = candidate.getJSONObject("content");
-                                JSONArray partsArr = contentObj.getJSONArray("parts");
-                                StringBuilder replyBuilder = new StringBuilder();
-                                for (int i = 0; i < partsArr.length(); i++) {
-                                    JSONObject p = partsArr.getJSONObject(i);
-                                    if (p.has("text")) {
-                                        replyBuilder.append(p.getString("text"));
-                                    }
-                                }
-                                String reply = replyBuilder.toString().trim();
-
-                                JSONObject modelTurn = new JSONObject();
-                                modelTurn.put("role", "model");
-                                JSONArray modelParts = new JSONArray();
-                                modelParts.put(new JSONObject().put("text", reply));
-                                modelTurn.put("parts", modelParts);
-                                conversationHistory.put(modelTurn);
-
-                                mainHandler.post(() -> {
-                                    runJs("appendLog('JARVIS', " + JSONObject.quote(reply) + ");");
-                                    speakOut(reply);
-                                });
-                                return;
-                            }
-                        } catch (Exception e) {
-                            mainHandler.post(() -> runJs("appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");"));
-                        }
-                    } else {
-                        mainHandler.post(() -> runJs("appendLog('ERR', 'API Error: Code " + response.code() + "'); setAssistantState('ONLINE', 0.1);"));
-                    }
-                }
-            });
+            sendWithModelFallback(body, new String[]{"gemini-flash-lite-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-latest"}, 0);
 
         } catch (Exception e) {
             runJs("appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");");
         }
+    }
+
+    private void sendWithModelFallback(RequestBody body, String[] models, int modelIndex) {
+        if (modelIndex >= models.length) {
+            mainHandler.post(() -> {
+                runJs("appendLog('ERR', 'All AI models temporarily busy. Please retry in a moment.'); setAssistantState('ONLINE', 0.1);");
+            });
+            return;
+        }
+
+        String modelName = models[modelIndex];
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey;
+
+        Request request = new Request.Builder()
+                .url(url)
+                .post(body)
+                .build();
+
+        httpClient.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                // Network failure — try next model
+                sendWithModelFallback(body, models, modelIndex + 1);
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                if (response.isSuccessful() && response.body() != null) {
+                    try {
+                        String resStr = response.body().string();
+                        JSONObject json = new JSONObject(resStr);
+                        JSONArray candidates = json.optJSONArray("candidates");
+                        if (candidates != null && candidates.length() > 0) {
+                            JSONObject candidate = candidates.getJSONObject(0);
+                            JSONObject contentObj = candidate.getJSONObject("content");
+                            JSONArray partsArr = contentObj.getJSONArray("parts");
+                            StringBuilder replyBuilder = new StringBuilder();
+                            for (int i = 0; i < partsArr.length(); i++) {
+                                JSONObject p = partsArr.getJSONObject(i);
+                                if (p.has("text")) {
+                                    replyBuilder.append(p.getString("text"));
+                                }
+                            }
+                            String reply = replyBuilder.toString().trim();
+
+                            JSONObject modelTurn = new JSONObject();
+                            modelTurn.put("role", "model");
+                            JSONArray modelParts = new JSONArray();
+                            modelParts.put(new JSONObject().put("text", reply));
+                            modelTurn.put("parts", modelParts);
+                            conversationHistory.put(modelTurn);
+
+                            mainHandler.post(() -> {
+                                runJs("appendLog('JARVIS', " + JSONObject.quote(reply) + ");");
+                                speakOut(reply);
+                            });
+                            return;
+                        }
+                    } catch (Exception e) {
+                        mainHandler.post(() -> runJs("appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");"));
+                        return;
+                    }
+                }
+                
+                // If 503 / 429 / 404, smoothly fallback to next model
+                sendWithModelFallback(body, models, modelIndex + 1);
+            }
+        });
     }
 
     private void speakOut(String text) {
