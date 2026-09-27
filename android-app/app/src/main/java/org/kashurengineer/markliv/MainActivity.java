@@ -338,7 +338,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                     MediaType.parse("application/json; charset=utf-8")
             );
 
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
+            String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + apiKey;
 
             Request request = new Request.Builder()
                     .url(url)
@@ -366,7 +366,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                                 JSONObject candidate = candidates.getJSONObject(0);
                                 JSONObject contentObj = candidate.getJSONObject("content");
                                 JSONArray partsArr = contentObj.getJSONArray("parts");
-                                String reply = partsArr.getJSONObject(0).getString("text").trim();
+                                StringBuilder replyBuilder = new StringBuilder();
+                                for (int i = 0; i < partsArr.length(); i++) {
+                                    JSONObject p = partsArr.getJSONObject(i);
+                                    if (p.has("text")) {
+                                        replyBuilder.append(p.getString("text"));
+                                    }
+                                }
+                                String reply = replyBuilder.toString().trim();
 
                                 JSONObject modelTurn = new JSONObject();
                                 modelTurn.put("role", "model");
