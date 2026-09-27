@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MARK LIV — JARVIS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    :root {
+      --bg: #00060a;
+      --panel: #010d14;
+      --border: #0d3347;
+      --border-bright: #1a5c7a;
+      --pri: #00d4ff;
+      --pri-dim: #007a99;
+      --pri-gho: rgba(0, 212, 255, 0.12);
+      --red: #ff1744;
+      --green: #00ff88;
+      --amber: #ffaa00;
+      --text: #8ffcff;
+      --text-dim: #3a8a9a;
+      --font: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 30%, rgba(0, 212, 255, 0.08) 0%, transparent 60%),
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 24px 24px, 24px 24px;
+    }
+
+    /* ── HEADER ── */
+    header {
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      background: rgba(1, 13, 20, 0.9);
+      backdrop-filter: blur(8px);
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+    }
+    .title {
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      color: var(--pri);
+      text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+    }
+    .author {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: var(--text-dim);
+    }
+    .author a { color: var(--pri); text-decoration: none; }
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      background: var(--pri-gho);
+      border: 1px solid var(--pri-dim);
+      border-radius: 99px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      color: var(--pri);
+      transition: all 0.3s;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--pri);
+      box-shadow: 0 0 8px var(--pri);
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1; transform:scale(1);} 50%{opacity:0.4; transform:scale(0.8);} }
+
+    .header-btns {
+      display: flex;
+      gap: 8px;
+    }
+    .icon-btn {
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--pri);
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .icon-btn:active { transform: scale(0.92); background: var(--pri-gho); }
+
+    /* ── CENTER HUD (ULTRON REACTOR) ── */
+    .hud-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 10px 0;
+    }
+    #reactorCanvas {
+      width: 270px;
+      height: 270px;
+      filter: drop-shadow(0 0 20px rgba(0, 212, 255, 0.35));
+    }
+    .hud-state-text {
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 2.5px;
+      color: var(--pri);
+      text-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+      text-transform: uppercase;
+    }
+
+    /* ── TELEMETRY BARS ── */
+    .telemetry-row {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-dim);
+      letter-spacing: 1px;
+    }
+    .telemetry-item span { color: var(--pri); }
+
+    /* ── ACTIVITY LOG CONSOLE ── */
+    .console-wrap {
+      height: 160px;
+      margin: 0 16px 12px;
+      background: rgba(1, 15, 24, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+    }
+    .console-header {
+      padding: 6px 12px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+      border-bottom: 1px solid rgba(13, 51, 71, 0.5);
+      background: rgba(0, 6, 10, 0.6);
+      display: flex;
+      justify-content: space-between;
+    }
+    .console-logs {
+      flex: 1;
+      padding: 10px 12px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .log-msg { animation: fadeIn 0.2s ease; }
+    .log-j { color: #d8f8ff; }
+    .log-j strong { color: var(--pri); font-weight: 700; }
+    .log-u { color: #ffcc00; text-align: right; }
+    .log-u strong { color: #ffaa00; }
+    .log-sys { color: var(--text-dim); font-size: 11px; }
+
+    /* ── CONTROLS FOOTER ── */
+    footer {
+      padding: 12px 16px 16px;
+      background: rgba(1, 13, 20, 0.95);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+    .cmd-input {
+      flex: 1;
+      background: #001018;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      transition: 0.2s;
+    }
+    .cmd-input:focus { border-color: var(--pri); box-shadow: 0 0 10px rgba(0, 212, 255, 0.3); }
+    .btn-send {
+      background: var(--pri-dim);
+      border: 1px solid var(--pri);
+      color: #fff;
+      font-weight: 800;
+      font-size: 11px;
+      letter-spacing: 1px;
+      padding: 0 16px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .btn-send:active { transform: scale(0.95); }
+
+    .btn-mic-main {
+      width: 100%;
+      height: 52px;
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 122, 153, 0.4));
+      border: 1.5px solid var(--pri);
+      border-radius: 12px;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.25);
+      transition: all 0.2s;
+    }
+    .btn-mic-main:active, .btn-mic-main.active {
+      background: linear-gradient(135deg, rgba(255, 23, 68, 0.4), rgba(255, 23, 68, 0.7));
+      border-color: var(--red);
+      box-shadow: 0 0 25px rgba(255, 23, 68, 0.6);
+      transform: scale(0.98);
+    }
+
+    /* ── SETTINGS MODAL ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 6, 10, 0.85);
+      backdrop-filter: blur(10px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    .modal-box {
+      width: 100%;
+      max-width: 380px;
+      background: #01111a;
+      border: 1.5px solid var(--border-bright);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+      animation: pop 0.2s ease;
+    }
+    .modal-title { font-size: 14px; font-weight: 900; letter-spacing: 2px; color: var(--pri); }
+    .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .theme-btn {
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      text-align: center;
+      background: #000c14;
+    }
+    .theme-ultron { border: 1px solid #ff1744; color: #ff1744; }
+    .theme-jarvis { border: 1px solid #00d4ff; color: #00d4ff; }
+    .theme-matrix { border: 1px solid #00ff88; color: #00ff88; }
+    .theme-amber { border: 1px solid #ffaa00; color: #ffaa00; }
+
+    @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="title">MARK LIV</div>
+      <div class="author">⚡ BY <a href="https://www.instagram.com/kashurengineer/" target="_blank">KASHUR ENGINEER ↗</a></div>
+    </div>
+    <div class="status-badge" id="statusBadge">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusLabel">ONLINE</span>
+    </div>
+    <div class="header-btns">
+      <button class="icon-btn" onclick="AndroidBridge.openCamera()" title="Camera Vision">📷</button>
+      <button class="icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <!-- CENTER HUD -->
+  <div class="hud-container">
+    <canvas id="reactorCanvas" width="540" height="540"></canvas>
+    <div class="hud-state-text" id="hudStateText">SYSTEMS READY</div>
+    <div class="telemetry-row">
+      <div class="telemetry-item">CPU: <span id="cpuVal">12%</span></div>
+      <div class="telemetry-item">MEM: <span id="memVal">4.2GB</span></div>
+      <div class="telemetry-item">CORE: <span id="coreVal">100%</span></div>
+    </div>
+  </div>
+
+  <!-- CONSOLE LOGS -->
+  <div class="console-wrap">
+    <div class="console-header">
+      <span>TERMINAL ACTIVITY</span>
+      <span>GEMINI LIVE · ACTIVE</span>
+    </div>
+    <div class="console-logs" id="consoleLogs">
+      <div class="log-msg log-j"><strong>JARVIS:</strong> Systems initialized. All protocols online and awaiting your command, Sir.</div>
+    </div>
+  </div>
+
+  <!-- FOOTER CONTROLS -->
+  <footer>
+    <div class="input-row">
+      <input type="text" id="cmdInput" class="cmd-input" placeholder="Type a message or command..." onkeydown="if(event.key==='Enter') sendText()">
+      <button class="btn-send" onclick="sendText()">SEND</button>
+    </div>
+    <button class="btn-mic-main" id="micBtn" onclick="toggleVoice()">
+      <span>🎤</span> <span id="micBtnText">TAP TO SPEAK</span>
+    </button>
+  </footer>
+
+  <!-- SETTINGS MODAL -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal-box">
+      <div class="modal-title">⚙️ CUSTOMISE ASSISTANT</div>
+      <div style="font-size: 11px; color: var(--text-dim);">GEMINI API KEY</div>
+      <input type="password" id="apiKeyInput" class="cmd-input" placeholder="Paste Gemini API Key (AIzaSy...)">
+      <div style="font-size: 10px; color: var(--pri);">
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--pri); text-decoration:none; font-weight:bold;">🔑 Get Free API Key at Google AI Studio ↗</a>
+      </div>
+      
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">THEME PRESETS</div>
+      <div class="theme-grid">
+        <div class="theme-btn theme-ultron" onclick="setTheme('#ff1744', '#ff1744')">🔴 ULTRON</div>
+        <div class="theme-btn theme-jarvis" onclick="setTheme('#00d4ff', '#00d4ff')">🤖 JARVIS</div>
+        <div class="theme-btn theme-matrix" onclick="setTheme('#00ff88', '#00ff88')">🟢 MATRIX</div>
+        <div class="theme-btn theme-amber" onclick="setTheme('#ffaa00', '#ffaa00')">🟠 AMBER</div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top: 8px;">
+        <button class="btn-send" style="flex:1; height:40px;" onclick="saveSettings()">SAVE & CONNECT</button>
+        <button class="cmd-input" style="width:70px; text-align:center; cursor:pointer;" onclick="closeSettings()">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('reactorCanvas');
+    const ctx = canvas.getContext('2d');
+    let angle = 0;
+    let audioLevel = 0.1;
+    let isSpeaking = false;
+    let isListening = false;
+    let themeColor = '#00d4ff';
+
+    // ── 60 FPS ULTRON REACTOR CANVAS ──
+    function drawReactor() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const radius = 220;
+
+      // Outer Hexagonal / Titanium chassis glow
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = themeColor + '66';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Rotating turbine blades (24 outer blades)
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((angle * Math.PI) / 180);
+      for (let i = 0; i < 24; i++) {
+        ctx.beginPath();
+        const a = (i * 15 * Math.PI) / 180;
+        const x1 = Math.cos(a) * (radius * 0.85);
+        const y1 = Math.sin(a) * (radius * 0.85);
+        const x2 = Math.cos(a) * (radius * 0.98);
+        const y2 = Math.sin(a) * (radius * 0.98);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = themeColor + 'aa';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Counter-rotating inner energy arcs
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((-angle * 1.6 * Math.PI) / 180);
+      for (let i = 0; i < 6; i++) {
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.65, (i * 60 * Math.PI) / 180, ((i * 60 + 40) * Math.PI) / 180);
+        ctx.strokeStyle = themeColor;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Dynamic Voice-reactive Center Iris
+      const pulseR = radius * 0.3 + (audioLevel * radius * 0.35);
+      const grad = ctx.createRadialGradient(cx, cy, 5, cx, cy, pulseR);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.4, themeColor);
+      grad.addColorStop(1, 'transparent');
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, pulseR, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.restore();
+      angle = (angle + 1.8) % 360;
+      requestAnimationFrame(drawReactor);
+    }
+    requestAnimationFrame(drawReactor);
+
+    // ── TELEMETRY DRIFT ──
+    setInterval(() => {
+      document.getElementById('cpuVal').innerText = (8 + Math.floor(Math.random() * 15)) + '%';
+      document.getElementById('memVal').innerText = (3.8 + (Math.random() * 0.6)).toFixed(1) + 'GB';
+    }, 2000);
+
+    // ── NATIVE BRIDGE FUNCTIONS ──
+    function toggleVoice() {
+      if (typeof AndroidBridge !== 'undefined') {
+        AndroidBridge.toggleVoiceRecognition();
+      } else {
+        appendLog('You', 'Voice triggered (simulation)');
+      }
+    }
+
+    function sendText() {
+      const inp = document.getElementById('cmdInput');
+      const val = inp.value.trim();
+      if (!val) return;
+      inp.value = '';
+      appendLog('You', val);
+      if (typeof AndroidBridge !== 'undefined') {
+        AndroidBridge.processTextCommand(val);
+      }
+    }
+
+    function appendLog(speaker, text) {
+      const logs = document.getElementById('consoleLogs');
+      const div = document.createElement('div');
+      div.className = 'log-msg ' + (speaker === 'You' ? 'log-u' : 'log-j');
+      div.innerHTML = `<strong>${speaker}:</strong> ${text}`;
+      logs.appendChild(div);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    function setAssistantState(state, level) {
+      document.getElementById('statusLabel').innerText = state;
+      document.getElementById('hudStateText').innerText = state;
+      audioLevel = level || 0.1;
+      const micBtn = document.getElementById('micBtn');
+      const micText = document.getElementById('micBtnText');
+      if (state === 'LISTENING') {
+        micBtn.classList.add('active');
+        micText.innerText = 'LISTENING... (TAP TO STOP)';
+      } else {
+        micBtn.classList.remove('active');
+        micText.innerText = 'TAP TO SPEAK';
+      }
+    }
+
+    function openSettings() {
+      document.getElementById('settingsModal').style.display = 'flex';
+      if (typeof AndroidBridge !== 'undefined') {
+        document.getElementById('apiKeyInput').value = AndroidBridge.getApiKey();
+      }
+    }
+
+    function closeSettings() {
+      document.getElementById('settingsModal').style.display = 'none';
+    }
+
+    function saveSettings() {
+      const key = document.getElementById('apiKeyInput').value.trim();
+      if (typeof AndroidBridge !== 'undefined') {
+        AndroidBridge.saveApiKey(key);
+      }
+      closeSettings();
+      appendLog('SYS', 'Gemini API Key saved and initialized.');
+    }
+
+    function setTheme(color) {
+      themeColor = color;
+      document.documentElement.style.setProperty('--pri', color);
+      document.documentElement.style.setProperty('--pri-dim', color + '99');
+      document.documentElement.style.setProperty('--pri-gho', color + '22');
+      closeSettings();
+    }
+  </script>
+</body>
+</html>

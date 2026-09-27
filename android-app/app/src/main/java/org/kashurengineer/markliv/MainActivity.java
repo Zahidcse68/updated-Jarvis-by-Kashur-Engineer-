@@ -1,7 +1,7 @@
 package org.kashurengineer.markliv;
 
 import android.Manifest;
-import android.app.AlertDialog;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -18,12 +18,10 @@ import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Base64;
-import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.ImageButton;
-import android.widget.ScrollView;
-import android.widget.TextView;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -55,18 +53,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final int CAMERA_REQ_CODE = 102;
     private static final String PREFS_NAME = "MarkLIVPrefs";
     private static final String KEY_GEMINI_API = "gemini_api_key";
-    private static final String KEY_USER_NAME = "user_name";
 
-    private UltronReactorView reactorView;
-    private TextView statusText;
-    private TextView logTextView;
-    private ScrollView logScrollView;
-    private Button btnMic;
-    private Button btnSendText;
-    private EditText textCommandInput;
-    private ImageButton btnSettings;
-    private ImageButton btnCamera;
-
+    private WebView webView;
     private String apiKey = "";
     private TextToSpeech tts;
     private SpeechRecognizer speechRecognizer;
@@ -80,20 +68,21 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             "You are witty, concise, highly capable, and speak naturally like Tony Stark's JARVIS. " +
             "You can open apps, search the web, analyze images, answer any question, and assist the user on Android.";
 
+    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        reactorView = findViewById(R.id.reactorView);
-        statusText = findViewById(R.id.statusText);
-        logTextView = findViewById(R.id.logTextView);
-        logScrollView = findViewById(R.id.logScrollView);
-        btnMic = findViewById(R.id.btnMic);
-        btnSendText = findViewById(R.id.btnSendText);
-        textCommandInput = findViewById(R.id.textCommandInput);
-        btnSettings = findViewById(R.id.btnSettings);
-        btnCamera = findViewById(R.id.btnCamera);
+        webView = findViewById(R.id.webView);
+        WebSettings ws = webView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setAllowFileAccess(true);
+        ws.setMediaPlaybackRequiresUserGesture(false);
+        webView.setWebChromeClient(new WebChromeClient());
+        webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
+        webView.loadUrl("file:///android_asset/index.html");
 
         tts = new TextToSpeech(this, this);
         httpClient = new OkHttpClient.Builder()
@@ -106,10 +95,48 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         checkPermissions();
         initSpeechRecognizer();
-        setupListeners();
+    }
 
-        if (apiKey.isEmpty()) {
-            showSettingsDialog();
+    public class WebAppInterface {
+        @JavascriptInterface
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        @JavascriptInterface
+        public void saveApiKey(String key) {
+            apiKey = key.trim();
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putString(KEY_GEMINI_API, apiKey).apply();
+            speakOut("Gemini API initialized and ready, Sir.");
+        }
+
+        @JavascriptInterface
+        public void toggleVoiceRecognition() {
+            mainHandler.post(() -> {
+                if (!isListening) {
+                    startVoiceRecognition();
+                } else {
+                    stopVoiceRecognition();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void processTextCommand(String command) {
+            mainHandler.post(() -> handleUserQuery(command, null));
+        }
+
+        @JavascriptInterface
+        public void openCamera() {
+            mainHandler.post(() -> {
+                Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
+                    startActivityForResult(takePictureIntent, CAMERA_REQ_CODE);
+                } else {
+                    Toast.makeText(MainActivity.this, "Camera not available", Toast.LENGTH_SHORT).show();
+                }
+            });
         }
     }
 
@@ -122,29 +149,17 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override
                 public void onStart(String utteranceId) {
-                    mainHandler.post(() -> {
-                        reactorView.setSpeaking(true);
-                        reactorView.setAudioLevel(0.7f);
-                        statusText.setText("SPEAKING · JARVIS ACTIVE");
-                    });
+                    mainHandler.post(() -> runJs("setAssistantState('SPEAKING', 0.8)"));
                 }
 
                 @Override
                 public void onDone(String utteranceId) {
-                    mainHandler.post(() -> {
-                        reactorView.setSpeaking(false);
-                        reactorView.setAudioLevel(0.1f);
-                        statusText.setText("ONLINE · READY");
-                    });
+                    mainHandler.post(() -> runJs("setAssistantState('ONLINE', 0.1)"));
                 }
 
                 @Override
                 public void onError(String utteranceId) {
-                    mainHandler.post(() -> {
-                        reactorView.setSpeaking(false);
-                        reactorView.setAudioLevel(0.1f);
-                        statusText.setText("ONLINE · READY");
-                    });
+                    mainHandler.post(() -> runJs("setAssistantState('ONLINE', 0.1)"));
                 }
             });
         }
@@ -168,21 +183,18 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             speechRecognizer.setRecognitionListener(new RecognitionListener() {
                 @Override
                 public void onReadyForSpeech(Bundle params) {
-                    mainHandler.post(() -> {
-                        statusText.setText("LISTENING · SPEAK NOW...");
-                        reactorView.setAudioLevel(0.5f);
-                    });
+                    mainHandler.post(() -> runJs("setAssistantState('LISTENING', 0.5)"));
                 }
 
                 @Override
                 public void onBeginningOfSpeech() {
-                    mainHandler.post(() -> reactorView.setAudioLevel(0.85f));
+                    mainHandler.post(() -> runJs("setAssistantState('LISTENING', 0.85)"));
                 }
 
                 @Override
                 public void onRmsChanged(float rmsdB) {
                     float norm = Math.max(0.1f, Math.min(1.0f, (rmsdB + 2f) / 10f));
-                    mainHandler.post(() -> reactorView.setAudioLevel(norm));
+                    mainHandler.post(() -> runJs("audioLevel = " + norm + ";"));
                 }
 
                 @Override
@@ -192,8 +204,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 public void onEndOfSpeech() {
                     mainHandler.post(() -> {
                         isListening = false;
-                        btnMic.setText("🎤 TAP TO SPEAK");
-                        statusText.setText("PROCESSING...");
+                        runJs("setAssistantState('PROCESSING', 0.2)");
                     });
                 }
 
@@ -201,8 +212,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 public void onError(int error) {
                     mainHandler.post(() -> {
                         isListening = false;
-                        btnMic.setText("🎤 TAP TO SPEAK");
-                        statusText.setText("ONLINE · READY");
+                        runJs("setAssistantState('ONLINE', 0.1)");
                     });
                 }
 
@@ -211,11 +221,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) {
                         String query = matches.get(0);
-                        appendLog("You: " + query);
+                        runJs("appendLog('You', " + JSONObject.quote(query) + ");");
                         handleUserQuery(query, null);
                     }
                     isListening = false;
-                    btnMic.setText("🎤 TAP TO SPEAK");
                 }
 
                 @Override
@@ -226,40 +235,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
-    private void setupListeners() {
-        btnSettings.setOnClickListener(v -> showSettingsDialog());
-
-        btnCamera.setOnClickListener(v -> {
-            Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-            if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
-                startActivityForResult(takePictureIntent, CAMERA_REQ_CODE);
-            } else {
-                Toast.makeText(this, "Camera not available", Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        btnMic.setOnClickListener(v -> {
-            if (!isListening) {
-                startVoiceRecognition();
-            } else {
-                stopVoiceRecognition();
-            }
-        });
-
-        btnSendText.setOnClickListener(v -> {
-            String text = textCommandInput.getText().toString().trim();
-            if (!text.isEmpty()) {
-                appendLog("You: " + text);
-                textCommandInput.setText("");
-                handleUserQuery(text, null);
-            }
-        });
-    }
-
     private void startVoiceRecognition() {
         if (speechRecognizer != null) {
             isListening = true;
-            btnMic.setText("🛑 LISTENING... (TAP TO STOP)");
+            runJs("setAssistantState('LISTENING', 0.6)");
             Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
@@ -271,7 +250,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (speechRecognizer != null && isListening) {
             speechRecognizer.stopListening();
             isListening = false;
-            btnMic.setText("🎤 TAP TO SPEAK");
+            runJs("setAssistantState('ONLINE', 0.1)");
         }
     }
 
@@ -283,7 +262,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             if (extras != null) {
                 Bitmap imageBitmap = (Bitmap) extras.get("data");
                 if (imageBitmap != null) {
-                    appendLog("📷 [Captured Camera Photo for Analysis]");
+                    runJs("appendLog('You', '📷 [Captured Camera Photo for Vision Analysis]');");
                     handleUserQuery("Analyze what you see in this photo and describe it clearly.", imageBitmap);
                 }
             }
@@ -293,7 +272,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private void handleUserQuery(String query, @Nullable Bitmap image) {
         String lower = query.toLowerCase();
 
-        // Android Native Quick App Intent Triggers
+        // Native Quick App Launch Intents
         if (lower.contains("open youtube")) {
             speakOut("Opening YouTube.");
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com")));
@@ -314,14 +293,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             return;
         }
 
-        // Send to Gemini Live / Flash API
+        // Send to Gemini AI API
         queryGeminiAPI(query, image);
     }
 
     private void queryGeminiAPI(String prompt, @Nullable Bitmap image) {
         if (apiKey.isEmpty()) {
-            appendLog("ERR: No Gemini API Key. Tap ⚙️ to enter your key.");
-            showSettingsDialog();
+            runJs("appendLog('ERR', 'No Gemini API Key set. Tap ⚙️ settings to enter your key.'); openSettings();");
             return;
         }
 
@@ -367,14 +345,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                     .post(body)
                     .build();
 
-            statusText.setText("THINKING · COMMUNICATING...");
+            runJs("setAssistantState('THINKING', 0.3);");
 
             httpClient.newCall(request).enqueue(new Callback() {
                 @Override
                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
                     mainHandler.post(() -> {
-                        statusText.setText("CONNECTION FAILED");
-                        appendLog("ERR: " + e.getMessage());
+                        runJs("setAssistantState('ONLINE', 0.1); appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");");
                     });
                 }
 
@@ -391,7 +368,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                                 JSONArray partsArr = contentObj.getJSONArray("parts");
                                 String reply = partsArr.getJSONObject(0).getString("text").trim();
 
-                                // Store assistant reply in conversation history
                                 JSONObject modelTurn = new JSONObject();
                                 modelTurn.put("role", "model");
                                 JSONArray modelParts = new JSONArray();
@@ -400,22 +376,22 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                                 conversationHistory.put(modelTurn);
 
                                 mainHandler.post(() -> {
-                                    appendLog("JARVIS: " + reply);
+                                    runJs("appendLog('JARVIS', " + JSONObject.quote(reply) + ");");
                                     speakOut(reply);
                                 });
                                 return;
                             }
                         } catch (Exception e) {
-                            mainHandler.post(() -> appendLog("Parse Error: " + e.getMessage()));
+                            mainHandler.post(() -> runJs("appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");"));
                         }
                     } else {
-                        mainHandler.post(() -> appendLog("API Error: HTTP " + response.code()));
+                        mainHandler.post(() -> runJs("appendLog('ERR', 'API Error: Code " + response.code() + "'); setAssistantState('ONLINE', 0.1);"));
                     }
                 }
             });
 
         } catch (Exception e) {
-            appendLog("Error: " + e.getMessage());
+            runJs("appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");");
         }
     }
 
@@ -426,31 +402,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
-    private void showSettingsDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("⚙️ MARK LIV Settings");
-
-        final EditText input = new EditText(this);
-        input.setHint("Paste Gemini API Key (AIzaSy...)");
-        input.setText(apiKey);
-        builder.setView(input);
-
-        builder.setPositiveButton("Save", (dialog, which) -> {
-            apiKey = input.getText().toString().trim();
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            prefs.edit().putString(KEY_GEMINI_API, apiKey).apply();
-            Toast.makeText(this, "API Key Saved!", Toast.LENGTH_SHORT).show();
-            appendLog("SYS: API Key updated. Ready.");
-            speakOut("System initialized and ready for commands, Sir.");
-        });
-
-        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
-        builder.show();
-    }
-
-    private void appendLog(String message) {
-        logTextView.append("\n\n" + message);
-        logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN));
+    private void runJs(String script) {
+        mainHandler.post(() -> webView.evaluateJavascript(script, null));
     }
 
     @Override
