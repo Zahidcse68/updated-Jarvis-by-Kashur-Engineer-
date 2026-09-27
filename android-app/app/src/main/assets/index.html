@@ -113,6 +113,12 @@
       border-color: var(--pri);
       box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
     }
+    .icon-btn.muted {
+      background: rgba(255, 23, 68, 0.2);
+      border-color: var(--red);
+      color: var(--red);
+      box-shadow: 0 0 10px rgba(255, 23, 68, 0.5);
+    }
 
     /* ── CENTER HUD (ULTRON REACTOR) ── */
     .hud-container {
@@ -259,30 +265,36 @@
     }
     .btn-send:active { transform: scale(0.95); }
 
-    .btn-mic-main {
-      width: 100%;
+    .action-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-mute {
+      flex: 1;
       height: 48px;
-      background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 122, 153, 0.4));
+      background: rgba(0, 212, 255, 0.1);
       border: 1.5px solid var(--pri);
       border-radius: 12px;
       color: #fff;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 900;
-      letter-spacing: 2px;
+      letter-spacing: 1.5px;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
       cursor: pointer;
-      box-shadow: 0 0 15px rgba(0, 212, 255, 0.25);
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
       transition: all 0.2s;
     }
-    .btn-mic-main:active, .btn-mic-main.active {
-      background: linear-gradient(135deg, rgba(255, 23, 68, 0.4), rgba(255, 23, 68, 0.7));
+    .btn-mute.is-muted {
+      background: rgba(255, 23, 68, 0.3);
       border-color: var(--red);
-      box-shadow: 0 0 25px rgba(255, 23, 68, 0.6);
-      transform: scale(0.98);
+      color: #ff8899;
+      box-shadow: 0 0 20px rgba(255, 23, 68, 0.5);
     }
+    .btn-mute:active { transform: scale(0.98); }
 
     /* ── SETTINGS MODAL ── */
     .modal-overlay {
@@ -351,9 +363,10 @@
     </div>
     <div class="status-badge" id="statusBadge">
       <div class="dot" id="statusDot"></div>
-      <span id="statusLabel">ONLINE</span>
+      <span id="statusLabel">LIVE LISTENING</span>
     </div>
     <div class="header-btns">
+      <button class="icon-btn" id="headerMuteBtn" onclick="AndroidBridge.toggleMute()" title="Mute Microphone">🎤</button>
       <button class="icon-btn" id="torchBtn" onclick="AndroidBridge.toggleTorch()" title="Flashlight Torch">🔦</button>
       <button class="icon-btn" onclick="AndroidBridge.openCamera()" title="Camera Vision">📷</button>
       <button class="icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
@@ -368,17 +381,17 @@
     <div class="pill-btn" onclick="sendQuickCommand('Volume down')">🔉 Vol-</div>
     <div class="pill-btn" onclick="sendQuickCommand('Open YouTube')">▶️ YouTube</div>
     <div class="pill-btn" onclick="sendQuickCommand('Open WhatsApp')">💬 WhatsApp</div>
-    <div class="pill-btn" onclick="sendQuickCommand('Open Settings')">⚙️ Android Settings</div>
+    <div class="pill-btn" onclick="sendQuickCommand('Open Settings')">⚙️ Settings</div>
   </div>
 
   <!-- CENTER HUD -->
   <div class="hud-container">
     <canvas id="reactorCanvas" width="500" height="500"></canvas>
-    <div class="hud-state-text" id="hudStateText">SYSTEMS ONLINE</div>
+    <div class="hud-state-text" id="hudStateText">LIVE · HANDS-FREE ACTIVE</div>
     <div class="telemetry-row">
       <div class="telemetry-item">BATT: <span id="battVal">100%</span></div>
       <div class="telemetry-item">RAM: <span id="ramVal">3.8GB / 8.0GB</span></div>
-      <div class="telemetry-item">VOICE: <span id="voiceLabel">PUCK</span></div>
+      <div class="telemetry-item">VOICE: <span id="voiceLabel">JARVIS NEURAL</span></div>
     </div>
   </div>
 
@@ -386,22 +399,24 @@
   <div class="console-wrap">
     <div class="console-header">
       <span>TERMINAL ACTIVITY</span>
-      <span>GEMINI LIVE NEURAL ENGINE</span>
+      <span id="liveBadge">● LIVE HANDS-FREE</span>
     </div>
     <div class="console-logs" id="consoleLogs">
-      <div class="log-msg log-j"><strong>JARVIS:</strong> Mark LIV Android neural online. Full system controls, Gemini voice engine & vision operational, Sir.</div>
+      <div class="log-msg log-j"><strong>JARVIS:</strong> Systems online, Sir. Direct continuous conversation is active — speak freely without tapping.</div>
     </div>
   </div>
 
   <!-- FOOTER CONTROLS -->
   <footer>
     <div class="input-row">
-      <input type="text" id="cmdInput" class="cmd-input" placeholder="Type command (e.g. 'call Mom', 'torch on', 'explain quantum')..." onkeydown="if(event.key==='Enter') sendText()">
+      <input type="text" id="cmdInput" class="cmd-input" placeholder="Type or just speak freely..." onkeydown="if(event.key==='Enter') sendText()">
       <button class="btn-send" onclick="sendText()">SEND</button>
     </div>
-    <button class="btn-mic-main" id="micBtn" onclick="toggleVoice()">
-      <span>🎤</span> <span id="micBtnText">TAP TO SPEAK</span>
-    </button>
+    <div class="action-row">
+      <button class="btn-mute" id="muteBtn" onclick="AndroidBridge.toggleMute()">
+        <span id="muteIcon">🎙️</span> <span id="muteText">LIVE LISTENING (TAP TO MUTE)</span>
+      </button>
+    </div>
   </footer>
 
   <!-- SETTINGS MODAL -->
@@ -415,13 +430,11 @@
         <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--pri); text-decoration:none; font-weight:bold;">🔑 Get Free API Key at Google AI Studio ↗</a>
       </div>
 
-      <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">GEMINI NEURAL VOICE PRESET</div>
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">TONY STARK / JARVIS NEURAL VOICE PROFILE</div>
       <select id="voiceSelect" class="voice-select">
-        <option value="Puck">🎙️ Puck (British / Tony Stark JARVIS style)</option>
-        <option value="Fenrir">🎙️ Fenrir (Deep Cybernetic Stark tone)</option>
-        <option value="Aoede">🎙️ Aoede (Melodic Warm AI)</option>
-        <option value="Charon">🎙️ Charon (Deep Authoritative Ultron tone)</option>
-        <option value="Kore">🎙️ Kore (Calm Natural Assistant)</option>
+        <option value="en-gb">🎙️ British Tony Stark JARVIS (Neural High-Def)</option>
+        <option value="en-us">🎙️ American Classic Tony Stark (Neural HD)</option>
+        <option value="en-in">🎙️ Indian English JARVIS (Neural HD)</option>
       </select>
       
       <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">HUD THEME PRESETS</div>
@@ -453,7 +466,7 @@
       const cy = canvas.height / 2;
       const radius = 200;
 
-      // Outer Hexagonal / Titanium chassis glow
+      // Outer chassis glow
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -461,7 +474,7 @@
       ctx.lineWidth = 3;
       ctx.stroke();
 
-      // Rotating turbine blades (24 outer blades)
+      // Rotating turbine blades
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate((angle * Math.PI) / 180);
@@ -511,7 +524,29 @@
     }
     requestAnimationFrame(drawReactor);
 
-    // ── NATIVE BRIDGE INTERFACES ──
+    // ── MUTE / LIVE LISTENING TOGGLE ──
+    function setMuteState(muted) {
+      const muteBtn = document.getElementById('muteBtn');
+      const muteText = document.getElementById('muteText');
+      const muteIcon = document.getElementById('muteIcon');
+      const headerBtn = document.getElementById('headerMuteBtn');
+      const liveBadge = document.getElementById('liveBadge');
+
+      if (muted) {
+        muteBtn.classList.add('is-muted');
+        muteText.innerText = 'MUTED (TAP TO UNMUTE MIC)';
+        muteIcon.innerText = '🔇';
+        headerBtn.classList.add('muted');
+        liveBadge.innerText = '● MIC MUTED';
+      } else {
+        muteBtn.classList.remove('is-muted');
+        muteText.innerText = 'LIVE LISTENING (TAP TO MUTE)';
+        muteIcon.innerText = '🎙️';
+        headerBtn.classList.remove('muted');
+        liveBadge.innerText = '● LIVE HANDS-FREE';
+      }
+    }
+
     function updateTelemetry(batt, ramUsed, ramTotal) {
       document.getElementById('battVal').innerText = batt + '%';
       document.getElementById('ramVal').innerText = ramUsed + 'GB / ' + ramTotal + 'GB';
@@ -521,14 +556,6 @@
       const btn = document.getElementById('torchBtn');
       if (on) btn.classList.add('active');
       else btn.classList.remove('active');
-    }
-
-    function toggleVoice() {
-      if (typeof AndroidBridge !== 'undefined') {
-        AndroidBridge.toggleVoiceRecognition();
-      } else {
-        appendLog('You', 'Voice triggered (simulation)');
-      }
     }
 
     function sendText() {
@@ -562,15 +589,6 @@
       document.getElementById('statusLabel').innerText = state;
       document.getElementById('hudStateText').innerText = state;
       audioLevel = level || 0.1;
-      const micBtn = document.getElementById('micBtn');
-      const micText = document.getElementById('micBtnText');
-      if (state === 'LISTENING') {
-        micBtn.classList.add('active');
-        micText.innerText = 'LISTENING... (TAP TO STOP)';
-      } else {
-        micBtn.classList.remove('active');
-        micText.innerText = 'TAP TO SPEAK';
-      }
     }
 
     function openSettings() {
@@ -595,7 +613,7 @@
       }
       document.getElementById('voiceLabel').innerText = voice.toUpperCase();
       closeSettings();
-      appendLog('SYS', `Configuration saved. Active Voice: ${voice}`);
+      appendLog('SYS', `Configuration saved. Voice: ${voice}`);
     }
 
     function setTheme(color) {
