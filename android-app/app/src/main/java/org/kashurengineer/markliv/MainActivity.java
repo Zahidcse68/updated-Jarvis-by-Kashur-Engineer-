@@ -10,8 +10,10 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.hardware.camera2.CameraManager;
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
 import android.media.AudioManager;
-import android.media.MediaPlayer;
+import android.media.AudioTrack;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Bundle;
@@ -22,9 +24,9 @@ import android.provider.Settings;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
-import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -40,13 +42,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -59,19 +55,17 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
-public class MainActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
+public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQ_CODE = 101;
     private static final int CAMERA_REQ_CODE = 102;
     private static final String PREFS_NAME = "MarkLIVPrefs";
     private static final String KEY_GEMINI_API = "gemini_api_key";
     private static final String KEY_VOICE_NAME = "gemini_voice_name";
-    private static final String KEY_AUTO_LISTEN = "auto_listen_continuous";
 
     private WebView webView;
     private String apiKey = "";
-    private String voiceName = "en-gb"; // British Jarvis neural voice default
-    private TextToSpeech tts;
+    private String voiceName = "Aoede"; // Default Gemini Neural Voice (Aoede / Puck / Fenrir / Kore)
     private SpeechRecognizer speechRecognizer;
     private boolean isMuted = false;
     private boolean isSpeaking = false;
@@ -81,12 +75,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private OkHttpClient httpClient;
     private final JSONArray conversationHistory = new JSONArray();
 
-    private MediaPlayer mediaPlayer;
+    private AudioTrack activeAudioTrack;
 
     private static final String SYSTEM_INSTRUCTION =
-            "You are JARVIS, Tony Stark's legendary cybernetic AI assistant for MARK LIV, custom engineered by Kashur Engineer (@kashurengineer). " +
-            "You speak concisely, intelligently, and with classic witty British JARVIS demeanor. " +
-            "Keep responses punchy, direct, and under 2-3 sentences for natural conversation. " +
+            "You are JARVIS, Tony Stark's legendary AI assistant for MARK LIV, custom engineered by Kashur Engineer (@kashurengineer). " +
+            "You speak concisely, intelligently, and with classic Tony Stark / JARVIS charisma. " +
+            "Keep answers concise (1-2 sentences maximum) for natural fast speech. " +
             "You have full Android system control: flashlight, volume, phone dialing, camera vision, and app launching.";
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -101,11 +95,15 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         ws.setDomStorageEnabled(true);
         ws.setAllowFileAccess(true);
         ws.setMediaPlaybackRequiresUserGesture(false);
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                request.grant(request.getResources());
+            }
+        });
         webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
         webView.loadUrl("file:///android_asset/index.html");
 
-        tts = new TextToSpeech(this, this);
         httpClient = new OkHttpClient.Builder()
                 .connectTimeout(25, TimeUnit.SECONDS)
                 .readTimeout(25, TimeUnit.SECONDS)
@@ -113,13 +111,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         apiKey = prefs.getString(KEY_GEMINI_API, "");
-        voiceName = prefs.getString(KEY_VOICE_NAME, "en-gb");
+        voiceName = prefs.getString(KEY_VOICE_NAME, "Aoede");
 
         checkPermissions();
         initSpeechRecognizer();
         startTelemetryLoop();
 
-        // Start hands-free dialogue mode after HUD initializes
         mainHandler.postDelayed(() -> {
             if (!isMuted) {
                 startContinuousListening();
@@ -138,7 +135,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             apiKey = key.trim();
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             prefs.edit().putString(KEY_GEMINI_API, apiKey).apply();
-            speakNeuralResponse("Gemini neural link established, Sir. Ready for your command.");
+            speakGeminiVoice("Gemini neural link established. All systems online, Sir.");
         }
 
         @JavascriptInterface
@@ -151,7 +148,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             voiceName = name.trim();
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             prefs.edit().putString(KEY_VOICE_NAME, voiceName).apply();
-            speakNeuralResponse("Voice synthesis profile updated, Sir.");
+            speakGeminiVoice("Voice profile switched to " + voiceName + ", Sir.");
         }
 
         @JavascriptInterface
@@ -219,15 +216,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
-    @Override
-    public void onInit(int status) {
-        if (status == TextToSpeech.SUCCESS) {
-            tts.setLanguage(Locale.UK);
-            tts.setPitch(0.88f);
-            tts.setSpeechRate(1.05f);
-        }
-    }
-
     private void checkPermissions() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -240,7 +228,33 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQ_CODE) {
+            boolean allGranted = true;
+            for (int res : grantResults) {
+                if (res != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
+            }
+            if (allGranted) {
+                initSpeechRecognizer();
+                if (!isMuted) {
+                    mainHandler.postDelayed(this::startContinuousListening, 500);
+                }
+            }
+        }
+    }
+
     private void initSpeechRecognizer() {
+        if (speechRecognizer != null) {
+            try {
+                speechRecognizer.destroy();
+            } catch (Exception ignored) {}
+        }
+
         if (SpeechRecognizer.isRecognitionAvailable(this)) {
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
             speechRecognizer.setRecognitionListener(new RecognitionListener() {
@@ -275,8 +289,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                     isListening = false;
                     mainHandler.post(() -> {
                         if (!isMuted && !isSpeaking) {
-                            // Automatically restart continuous listening
-                            mainHandler.postDelayed(MainActivity.this::startContinuousListening, 500);
+                            mainHandler.postDelayed(MainActivity.this::startContinuousListening, 400);
                         } else {
                             runJs("setAssistantState('ONLINE', 0.1)");
                         }
@@ -306,7 +319,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
-    // ── CONTINUOUS HANDS-FREE LISTENING ──
     private void startContinuousListening() {
         if (isMuted || isSpeaking) return;
         mainHandler.post(() -> {
@@ -356,7 +368,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             isMuted = true;
             stopListening();
             runJs("setMuteState(true); setAssistantState('MUTED', 0.0); appendLog('JARVIS', 'Muted. Tap UNMUTE when you need me, Sir.');");
-            speakNeuralResponse("Microphone muted, Sir.");
+            speakGeminiVoice("Microphone muted, Sir.");
             return;
         }
 
@@ -365,13 +377,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             setTorchMode(true);
             String resp = "Flashlight activated, Sir.";
             runJs("appendLog('JARVIS', '🔦 " + resp + "');");
-            speakNeuralResponse(resp);
+            speakGeminiVoice(resp);
             return;
         } else if (lower.contains("turn off torch") || lower.contains("torch off") || lower.contains("turn off flashlight") || lower.contains("flashlight off") || lower.equals("light off")) {
             setTorchMode(false);
             String resp = "Flashlight deactivated, Sir.";
             runJs("appendLog('JARVIS', '🔦 " + resp + "');");
-            speakNeuralResponse(resp);
+            speakGeminiVoice(resp);
             return;
         }
 
@@ -380,13 +392,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             adjustVolume(AudioManager.ADJUST_RAISE);
             String resp = "Volume increased, Sir.";
             runJs("appendLog('JARVIS', '🔊 " + resp + "');");
-            speakNeuralResponse(resp);
+            speakGeminiVoice(resp);
             return;
         } else if (lower.contains("volume down") || lower.contains("decrease volume") || lower.contains("lower volume")) {
             adjustVolume(AudioManager.ADJUST_LOWER);
             String resp = "Volume decreased, Sir.";
             runJs("appendLog('JARVIS', '🔉 " + resp + "');");
-            speakNeuralResponse(resp);
+            speakGeminiVoice(resp);
             return;
         }
 
@@ -396,40 +408,40 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             dialPhoneNumber(target);
             String resp = "Opening phone dialer for " + target + ", Sir.";
             runJs("appendLog('JARVIS', '📞 " + resp + "');");
-            speakNeuralResponse(resp);
+            speakGeminiVoice(resp);
             return;
         }
 
         // 5. App Launchers
         if (lower.contains("open youtube")) {
             launchAppOrUrl("com.google.android.youtube", "https://www.youtube.com");
-            speakNeuralResponse("Opening YouTube.");
+            speakGeminiVoice("Opening YouTube.");
             return;
         } else if (lower.contains("open whatsapp")) {
             launchApp("com.whatsapp");
-            speakNeuralResponse("Opening WhatsApp.");
+            speakGeminiVoice("Opening WhatsApp.");
             return;
         } else if (lower.contains("open spotify")) {
             launchAppOrUrl("com.spotify.music", "https://open.spotify.com");
-            speakNeuralResponse("Opening Spotify.");
+            speakGeminiVoice("Opening Spotify.");
             return;
         } else if (lower.contains("open chrome") || lower.contains("open browser") || lower.contains("search google")) {
             launchAppOrUrl("com.android.chrome", "https://www.google.com");
-            speakNeuralResponse("Opening Chrome.");
+            speakGeminiVoice("Opening Chrome.");
             return;
         } else if (lower.contains("open calculator")) {
             launchApp("com.google.android.calculator");
-            speakNeuralResponse("Opening Calculator.");
+            speakGeminiVoice("Opening Calculator.");
             return;
         } else if (lower.contains("open settings")) {
             startActivity(new Intent(Settings.ACTION_SETTINGS));
-            speakNeuralResponse("Accessing device settings.");
+            speakGeminiVoice("Accessing device settings.");
             return;
         } else if (lower.contains("battery status") || lower.contains("battery percentage") || lower.equals("battery")) {
             int batt = getBatteryPercentage();
-            String res = "Battery power is currently at " + batt + "%, Sir. Power grid stable.";
+            String res = "Battery power is at " + batt + "%, Sir. Power cells nominal.";
             runJs("appendLog('JARVIS', " + JSONObject.quote("🔋 " + res) + ");");
-            speakNeuralResponse(res);
+            speakGeminiVoice(res);
             return;
         }
 
@@ -510,7 +522,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }, 1500);
     }
 
-    // ── GEMINI AI TEXT + VISION API ──
+    // ── GEMINI AI TEXT INFERENCE ──
     private void queryGeminiAPI(String prompt, @Nullable Bitmap image) {
         if (apiKey.isEmpty()) {
             runJs("appendLog('ERR', 'No Gemini API Key set. Tap ⚙️ settings to enter your key.'); openSettings();");
@@ -554,12 +566,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
             runJs("setAssistantState('THINKING', 0.3);");
             sendWithModelFallback(body, new String[]{
-                "gemini-2.0-flash",
-                "gemini-2.0-flash-lite",
                 "gemini-flash-lite-latest",
                 "gemini-3.1-flash-lite-preview",
-                "gemini-flash-latest",
-                "gemini-pro-latest"
+                "gemini-2.5-flash",
+                "gemini-flash-latest"
             }, 0);
 
         } catch (Exception e) {
@@ -570,7 +580,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private void sendWithModelFallback(RequestBody body, String[] models, int modelIndex) {
         if (modelIndex >= models.length) {
             mainHandler.post(() -> {
-                runJs("appendLog('ERR', 'All AI models temporarily busy (503). Please retry in a moment.'); setAssistantState('ONLINE', 0.1);");
+                runJs("appendLog('ERR', 'All AI models temporarily busy. Retrying in a moment.'); setAssistantState('ONLINE', 0.1);");
                 if (!isMuted) startContinuousListening();
             });
             return;
@@ -620,7 +630,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
                             mainHandler.post(() -> {
                                 runJs("appendLog('JARVIS', " + JSONObject.quote(reply) + ");");
-                                speakNeuralResponse(reply);
+                                speakGeminiVoice(reply);
                             });
                             return;
                         }
@@ -638,8 +648,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         });
     }
 
-    // ── HIGH-DEFINITION NEURAL VOICE STREAMING SYNTHESIS ──
-    private void speakNeuralResponse(String rawText) {
+    // ── DIRECT GEMINI NEURAL VOICE SYNTHESIS (AOEDE / PUCK / FENRIR / KORE) ──
+    private void speakGeminiVoice(String rawText) {
         String cleanText = rawText.replaceAll("[*#_`]", "").trim();
         if (cleanText.isEmpty()) return;
 
@@ -648,93 +658,131 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         new Thread(() -> {
             try {
-                // Synthesize natural British Tony Stark / Jarvis neural audio
-                String langCode = voiceName.equals("en-us") ? "en-us" : (voiceName.equals("en-in") ? "en-in" : "en-uk");
-                String ttsUrl = "https://translate.google.com/translate_tts?ie=UTF-8&q=" +
-                        URLEncoder.encode(cleanText, "UTF-8") +
-                        "&tl=" + langCode + "&client=tw-ob";
+                // Call Gemini official Neural TTS model
+                String ttsUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=" + apiKey;
 
-                URL url = new URL(ttsUrl);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(8000);
-                conn.connect();
+                JSONObject ttsBody = new JSONObject();
+                JSONArray contents = new JSONArray();
+                JSONObject content = new JSONObject();
+                JSONArray parts = new JSONArray();
+                parts.put(new JSONObject().put("text", cleanText));
+                content.put("parts", parts);
+                contents.put(content);
+                ttsBody.put("contents", contents);
 
-                if (conn.getResponseCode() == 200) {
-                    File tempAudio = File.createTempFile("neural_voice", ".mp3", getCacheDir());
-                    FileOutputStream fos = new FileOutputStream(tempAudio);
-                    InputStream is = conn.getInputStream();
-                    byte[] buffer = new byte[4096];
-                    int len;
-                    while ((len = is.read(buffer)) != -1) {
-                        fos.write(buffer, 0, len);
+                JSONObject genConfig = new JSONObject();
+                JSONArray respModalities = new JSONArray();
+                respModalities.put("AUDIO");
+                genConfig.put("responseModalities", respModalities);
+
+                JSONObject speechCfg = new JSONObject();
+                JSONObject voiceCfg = new JSONObject();
+                JSONObject prebuilt = new JSONObject();
+                prebuilt.put("voiceName", voiceName.isEmpty() ? "Aoede" : voiceName);
+                voiceCfg.put("prebuiltVoiceConfig", prebuilt);
+                speechCfg.put("voiceConfig", voiceCfg);
+                genConfig.put("speechConfig", speechCfg);
+
+                ttsBody.put("generationConfig", genConfig);
+
+                RequestBody requestBody = RequestBody.create(
+                        ttsBody.toString(),
+                        MediaType.parse("application/json; charset=utf-8")
+                );
+
+                Request req = new Request.Builder()
+                        .url(ttsUrl)
+                        .post(requestBody)
+                        .build();
+
+                Response resp = httpClient.newCall(req).execute();
+                if (resp.isSuccessful() && resp.body() != null) {
+                    String jsonStr = resp.body().string();
+                    JSONObject resJson = new JSONObject(jsonStr);
+                    JSONArray candidates = resJson.optJSONArray("candidates");
+                    if (candidates != null && candidates.length() > 0) {
+                        JSONArray resParts = candidates.getJSONObject(0).getJSONObject("content").getJSONArray("parts");
+                        for (int i = 0; i < resParts.length(); i++) {
+                            JSONObject p = resParts.getJSONObject(i);
+                            if (p.has("inlineData")) {
+                                String b64Audio = p.getJSONObject("inlineData").getString("data");
+                                byte[] pcmAudio = Base64.decode(b64Audio, Base64.DEFAULT);
+                                playRawPcmAudio(pcmAudio, 24000);
+                                resp.close();
+                                return;
+                            }
+                        }
                     }
-                    fos.close();
-                    is.close();
-
-                    mainHandler.post(() -> playAudioFile(tempAudio));
-                } else {
-                    // Fallback to local TTS
-                    mainHandler.post(() -> fallbackTtsSpeak(cleanText));
                 }
+                resp.close();
             } catch (Exception e) {
-                mainHandler.post(() -> fallbackTtsSpeak(cleanText));
+                e.printStackTrace();
             }
+
+            // Fallback audio playback simulation
+            mainHandler.post(() -> {
+                isSpeaking = false;
+                runJs("setAssistantState('ONLINE', 0.1);");
+                if (!isMuted) startContinuousListening();
+            });
         }).start();
     }
 
-    private void playAudioFile(File audioFile) {
-        try {
-            if (mediaPlayer != null) {
-                mediaPlayer.release();
-            }
-            mediaPlayer = new MediaPlayer();
-            mediaPlayer.setDataSource(audioFile.getAbsolutePath());
-            mediaPlayer.setOnPreparedListener(mp -> {
+    private void playRawPcmAudio(byte[] pcmData, int sampleRate) {
+        new Thread(() -> {
+            try {
+                int bufferSize = AudioTrack.getMinBufferSize(
+                        sampleRate,
+                        AudioFormat.CHANNEL_OUT_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT
+                );
+
+                AudioTrack track = new AudioTrack.Builder()
+                        .setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build())
+                        .setAudioFormat(new AudioFormat.Builder()
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .setSampleRate(sampleRate)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                                .build())
+                        .setBufferSizeInBytes(Math.max(bufferSize, pcmData.length))
+                        .setTransferMode(AudioTrack.MODE_STATIC)
+                        .build();
+
+                track.write(pcmData, 0, pcmData.length);
                 mainHandler.post(() -> runJs("setAssistantState('SPEAKING', 0.85);"));
-                mp.start();
-                animateSpeakingMouth();
-            });
-            mediaPlayer.setOnCompletionListener(mp -> {
-                isSpeaking = false;
-                mp.release();
-                mediaPlayer = null;
-                audioFile.delete();
+                track.play();
+
+                long durationMs = (long) ((pcmData.length / 2.0 / sampleRate) * 1000);
+                long startTime = System.currentTimeMillis();
+
+                while (System.currentTimeMillis() - startTime < durationMs) {
+                    float simLevel = 0.35f + (float) (Math.random() * 0.6);
+                    mainHandler.post(() -> runJs("audioLevel = " + simLevel + ";"));
+                    Thread.sleep(80);
+                }
+
+                track.stop();
+                track.release();
+
                 mainHandler.post(() -> {
+                    isSpeaking = false;
                     runJs("setAssistantState('ONLINE', 0.1);");
-                    // Auto resume continuous conversation if unmuted
                     if (!isMuted) {
                         mainHandler.postDelayed(MainActivity.this::startContinuousListening, 300);
                     }
                 });
-            });
-            mediaPlayer.prepare();
-        } catch (Exception e) {
-            fallbackTtsSpeak(audioFile.getName());
-        }
-    }
 
-    private void animateSpeakingMouth() {
-        new Thread(() -> {
-            while (isSpeaking && mediaPlayer != null && mediaPlayer.isPlaying()) {
-                float level = 0.35f + (float) (Math.random() * 0.6);
-                mainHandler.post(() -> runJs("audioLevel = " + level + ";"));
-                try {
-                    Thread.sleep(80);
-                } catch (InterruptedException ignored) {}
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    isSpeaking = false;
+                    runJs("setAssistantState('ONLINE', 0.1);");
+                    if (!isMuted) startContinuousListening();
+                });
             }
         }).start();
-    }
-
-    private void fallbackTtsSpeak(String text) {
-        if (tts != null) {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "UtteranceId_" + System.currentTimeMillis());
-            mainHandler.postDelayed(() -> {
-                isSpeaking = false;
-                if (!isMuted) startContinuousListening();
-            }, 3000);
-        }
     }
 
     private void runJs(String script) {
@@ -743,15 +791,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     @Override
     protected void onDestroy() {
-        if (tts != null) {
-            tts.stop();
-            tts.shutdown();
-        }
         if (speechRecognizer != null) {
             speechRecognizer.destroy();
         }
-        if (mediaPlayer != null) {
-            mediaPlayer.release();
+        if (activeAudioTrack != null) {
+            activeAudioTrack.release();
         }
         super.onDestroy();
     }
