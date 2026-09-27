@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.MarkLIV" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#00D4FF</item>
+        <item name="colorPrimaryVariant">#0099CC</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="android:statusBarColor">#00090E</item>
+        <item name="android:navigationBarColor">#00090E</item>
+    </style>
+</resources>
