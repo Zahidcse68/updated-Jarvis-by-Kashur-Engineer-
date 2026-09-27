@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>MARK LIV — JARVIS</title>
+  <title>MARK LIV — JARVIS ULTRON HUD</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
     :root {
@@ -38,12 +38,12 @@
 
     /* ── HEADER ── */
     header {
-      padding: 12px 16px;
+      padding: 10px 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid var(--border);
-      background: rgba(1, 13, 20, 0.9);
+      background: rgba(1, 13, 20, 0.92);
       backdrop-filter: blur(8px);
       z-index: 10;
     }
@@ -52,16 +52,16 @@
       flex-direction: column;
     }
     .title {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 900;
-      letter-spacing: 3px;
+      letter-spacing: 2.5px;
       color: var(--pri);
       text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
     }
     .author {
       font-size: 9px;
       font-weight: 700;
-      letter-spacing: 1.5px;
+      letter-spacing: 1px;
       color: var(--text-dim);
     }
     .author a { color: var(--pri); text-decoration: none; }
@@ -69,13 +69,13 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 5px 12px;
+      padding: 4px 10px;
       background: var(--pri-gho);
       border: 1px solid var(--pri-dim);
       border-radius: 99px;
       font-size: 10px;
       font-weight: 800;
-      letter-spacing: 1.5px;
+      letter-spacing: 1px;
       color: var(--pri);
       transition: all 0.3s;
     }
@@ -91,23 +91,28 @@
 
     .header-btns {
       display: flex;
-      gap: 8px;
+      gap: 6px;
     }
     .icon-btn {
       background: rgba(0, 212, 255, 0.08);
       border: 1px solid var(--border);
       color: var(--pri);
-      width: 36px;
-      height: 36px;
+      width: 34px;
+      height: 34px;
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 15px;
+      font-size: 14px;
       cursor: pointer;
       transition: 0.2s;
     }
-    .icon-btn:active { transform: scale(0.92); background: var(--pri-gho); }
+    .icon-btn:active, .icon-btn.active { 
+      transform: scale(0.92); 
+      background: var(--pri-gho); 
+      border-color: var(--pri);
+      box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+    }
 
     /* ── CENTER HUD (ULTRON REACTOR) ── */
     .hud-container {
@@ -117,18 +122,18 @@
       align-items: center;
       justify-content: center;
       position: relative;
-      padding: 10px 0;
+      padding: 4px 0;
     }
     #reactorCanvas {
-      width: 270px;
-      height: 270px;
+      width: 250px;
+      height: 250px;
       filter: drop-shadow(0 0 20px rgba(0, 212, 255, 0.35));
     }
     .hud-state-text {
-      margin-top: 8px;
+      margin-top: 6px;
       font-size: 12px;
       font-weight: 800;
-      letter-spacing: 2.5px;
+      letter-spacing: 2px;
       color: var(--pri);
       text-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
       text-transform: uppercase;
@@ -138,7 +143,7 @@
     .telemetry-row {
       display: flex;
       justify-content: center;
-      gap: 16px;
+      gap: 14px;
       margin-top: 4px;
       font-size: 10px;
       font-weight: 700;
@@ -147,23 +152,51 @@
     }
     .telemetry-item span { color: var(--pri); }
 
+    /* ── QUICK SYSTEM ACTIONS BAR ── */
+    .quick-bar {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: rgba(0, 8, 14, 0.6);
+      border-top: 1px solid rgba(13, 51, 71, 0.4);
+      border-bottom: 1px solid rgba(13, 51, 71, 0.4);
+      overflow-x: auto;
+    }
+    .pill-btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      background: rgba(0, 212, 255, 0.06);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: 0.2s;
+    }
+    .pill-btn:active { background: var(--pri-gho); border-color: var(--pri); }
+
     /* ── ACTIVITY LOG CONSOLE ── */
     .console-wrap {
-      height: 160px;
-      margin: 0 16px 12px;
+      height: 140px;
+      margin: 6px 14px 8px;
       background: rgba(1, 15, 24, 0.85);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 10px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
       box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
     }
     .console-header {
-      padding: 6px 12px;
+      padding: 5px 10px;
       font-size: 9px;
       font-weight: 800;
-      letter-spacing: 2px;
+      letter-spacing: 1.5px;
       color: var(--text-dim);
       border-bottom: 1px solid rgba(13, 51, 71, 0.5);
       background: rgba(0, 6, 10, 0.6);
@@ -172,30 +205,30 @@
     }
     .console-logs {
       flex: 1;
-      padding: 10px 12px;
+      padding: 8px 10px;
       overflow-y: auto;
       font-family: 'Consolas', 'Courier New', monospace;
-      font-size: 12px;
-      line-height: 1.6;
+      font-size: 11.5px;
+      line-height: 1.5;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 5px;
     }
     .log-msg { animation: fadeIn 0.2s ease; }
     .log-j { color: #d8f8ff; }
     .log-j strong { color: var(--pri); font-weight: 700; }
     .log-u { color: #ffcc00; text-align: right; }
     .log-u strong { color: #ffaa00; }
-    .log-sys { color: var(--text-dim); font-size: 11px; }
+    .log-sys { color: var(--text-dim); font-size: 10.5px; }
 
     /* ── CONTROLS FOOTER ── */
     footer {
-      padding: 12px 16px 16px;
+      padding: 8px 14px 14px;
       background: rgba(1, 13, 20, 0.95);
       border-top: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
     .input-row {
       display: flex;
@@ -206,7 +239,7 @@
       background: #001018;
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 10px 14px;
+      padding: 9px 12px;
       color: #fff;
       font-size: 13px;
       outline: none;
@@ -220,7 +253,7 @@
       font-weight: 800;
       font-size: 11px;
       letter-spacing: 1px;
-      padding: 0 16px;
+      padding: 0 14px;
       border-radius: 10px;
       cursor: pointer;
     }
@@ -228,12 +261,12 @@
 
     .btn-mic-main {
       width: 100%;
-      height: 52px;
+      height: 48px;
       background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 122, 153, 0.4));
       border: 1.5px solid var(--pri);
       border-radius: 12px;
       color: #fff;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 900;
       letter-spacing: 2px;
       display: flex;
@@ -255,13 +288,13 @@
     .modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 6, 10, 0.85);
+      background: rgba(0, 6, 10, 0.88);
       backdrop-filter: blur(10px);
       display: none;
       align-items: center;
       justify-content: center;
       z-index: 100;
-      padding: 20px;
+      padding: 16px;
     }
     .modal-box {
       width: 100%;
@@ -269,17 +302,19 @@
       background: #01111a;
       border: 1.5px solid var(--border-bright);
       border-radius: 16px;
-      padding: 20px;
+      padding: 18px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
       animation: pop 0.2s ease;
+      max-height: 90vh;
+      overflow-y: auto;
     }
     .modal-title { font-size: 14px; font-weight: 900; letter-spacing: 2px; color: var(--pri); }
     .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .theme-btn {
-      padding: 10px;
+      padding: 8px;
       border-radius: 8px;
       font-size: 11px;
       font-weight: 800;
@@ -291,6 +326,17 @@
     .theme-jarvis { border: 1px solid #00d4ff; color: #00d4ff; }
     .theme-matrix { border: 1px solid #00ff88; color: #00ff88; }
     .theme-amber { border: 1px solid #ffaa00; color: #ffaa00; }
+
+    .voice-select {
+      background: #001018;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      color: #fff;
+      font-size: 12px;
+      outline: none;
+      width: 100%;
+    }
 
     @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
   </style>
@@ -308,19 +354,31 @@
       <span id="statusLabel">ONLINE</span>
     </div>
     <div class="header-btns">
+      <button class="icon-btn" id="torchBtn" onclick="AndroidBridge.toggleTorch()" title="Flashlight Torch">🔦</button>
       <button class="icon-btn" onclick="AndroidBridge.openCamera()" title="Camera Vision">📷</button>
       <button class="icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
     </div>
   </header>
 
+  <!-- QUICK ACTIONS BAR -->
+  <div class="quick-bar">
+    <div class="pill-btn" onclick="sendQuickCommand('Turn on flashlight')">🔦 Flashlight</div>
+    <div class="pill-btn" onclick="sendQuickCommand('Battery status')">🔋 Battery</div>
+    <div class="pill-btn" onclick="sendQuickCommand('Volume up')">🔊 Vol+</div>
+    <div class="pill-btn" onclick="sendQuickCommand('Volume down')">🔉 Vol-</div>
+    <div class="pill-btn" onclick="sendQuickCommand('Open YouTube')">▶️ YouTube</div>
+    <div class="pill-btn" onclick="sendQuickCommand('Open WhatsApp')">💬 WhatsApp</div>
+    <div class="pill-btn" onclick="sendQuickCommand('Open Settings')">⚙️ Android Settings</div>
+  </div>
+
   <!-- CENTER HUD -->
   <div class="hud-container">
-    <canvas id="reactorCanvas" width="540" height="540"></canvas>
-    <div class="hud-state-text" id="hudStateText">SYSTEMS READY</div>
+    <canvas id="reactorCanvas" width="500" height="500"></canvas>
+    <div class="hud-state-text" id="hudStateText">SYSTEMS ONLINE</div>
     <div class="telemetry-row">
-      <div class="telemetry-item">CPU: <span id="cpuVal">12%</span></div>
-      <div class="telemetry-item">MEM: <span id="memVal">4.2GB</span></div>
-      <div class="telemetry-item">CORE: <span id="coreVal">100%</span></div>
+      <div class="telemetry-item">BATT: <span id="battVal">100%</span></div>
+      <div class="telemetry-item">RAM: <span id="ramVal">3.8GB / 8.0GB</span></div>
+      <div class="telemetry-item">VOICE: <span id="voiceLabel">PUCK</span></div>
     </div>
   </div>
 
@@ -328,17 +386,17 @@
   <div class="console-wrap">
     <div class="console-header">
       <span>TERMINAL ACTIVITY</span>
-      <span>GEMINI LIVE · ACTIVE</span>
+      <span>GEMINI LIVE NEURAL ENGINE</span>
     </div>
     <div class="console-logs" id="consoleLogs">
-      <div class="log-msg log-j"><strong>JARVIS:</strong> Systems initialized. All protocols online and awaiting your command, Sir.</div>
+      <div class="log-msg log-j"><strong>JARVIS:</strong> Mark LIV Android neural online. Full system controls, Gemini voice engine & vision operational, Sir.</div>
     </div>
   </div>
 
   <!-- FOOTER CONTROLS -->
   <footer>
     <div class="input-row">
-      <input type="text" id="cmdInput" class="cmd-input" placeholder="Type a message or command..." onkeydown="if(event.key==='Enter') sendText()">
+      <input type="text" id="cmdInput" class="cmd-input" placeholder="Type command (e.g. 'call Mom', 'torch on', 'explain quantum')..." onkeydown="if(event.key==='Enter') sendText()">
       <button class="btn-send" onclick="sendText()">SEND</button>
     </div>
     <button class="btn-mic-main" id="micBtn" onclick="toggleVoice()">
@@ -349,23 +407,33 @@
   <!-- SETTINGS MODAL -->
   <div class="modal-overlay" id="settingsModal">
     <div class="modal-box">
-      <div class="modal-title">⚙️ CUSTOMISE ASSISTANT</div>
+      <div class="modal-title">⚙️ MARK LIV CONFIGURATION</div>
+      
       <div style="font-size: 11px; color: var(--text-dim);">GEMINI API KEY</div>
       <input type="password" id="apiKeyInput" class="cmd-input" placeholder="Paste Gemini API Key (AIzaSy...)">
       <div style="font-size: 10px; color: var(--pri);">
         <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--pri); text-decoration:none; font-weight:bold;">🔑 Get Free API Key at Google AI Studio ↗</a>
       </div>
+
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">GEMINI NEURAL VOICE PRESET</div>
+      <select id="voiceSelect" class="voice-select">
+        <option value="Puck">🎙️ Puck (British / Tony Stark JARVIS style)</option>
+        <option value="Fenrir">🎙️ Fenrir (Deep Cybernetic Stark tone)</option>
+        <option value="Aoede">🎙️ Aoede (Melodic Warm AI)</option>
+        <option value="Charon">🎙️ Charon (Deep Authoritative Ultron tone)</option>
+        <option value="Kore">🎙️ Kore (Calm Natural Assistant)</option>
+      </select>
       
-      <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">THEME PRESETS</div>
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">HUD THEME PRESETS</div>
       <div class="theme-grid">
-        <div class="theme-btn theme-ultron" onclick="setTheme('#ff1744', '#ff1744')">🔴 ULTRON</div>
-        <div class="theme-btn theme-jarvis" onclick="setTheme('#00d4ff', '#00d4ff')">🤖 JARVIS</div>
-        <div class="theme-btn theme-matrix" onclick="setTheme('#00ff88', '#00ff88')">🟢 MATRIX</div>
-        <div class="theme-btn theme-amber" onclick="setTheme('#ffaa00', '#ffaa00')">🟠 AMBER</div>
+        <div class="theme-btn theme-ultron" onclick="setTheme('#ff1744')">🔴 ULTRON</div>
+        <div class="theme-btn theme-jarvis" onclick="setTheme('#00d4ff')">🤖 JARVIS</div>
+        <div class="theme-btn theme-matrix" onclick="setTheme('#00ff88')">🟢 MATRIX</div>
+        <div class="theme-btn theme-amber" onclick="setTheme('#ffaa00')">🟠 AMBER</div>
       </div>
 
-      <div style="display:flex; gap:8px; margin-top: 8px;">
-        <button class="btn-send" style="flex:1; height:40px;" onclick="saveSettings()">SAVE & CONNECT</button>
+      <div style="display:flex; gap:8px; margin-top: 6px;">
+        <button class="btn-send" style="flex:1; height:38px;" onclick="saveSettings()">SAVE & APPLY</button>
         <button class="cmd-input" style="width:70px; text-align:center; cursor:pointer;" onclick="closeSettings()">CLOSE</button>
       </div>
     </div>
@@ -376,8 +444,6 @@
     const ctx = canvas.getContext('2d');
     let angle = 0;
     let audioLevel = 0.1;
-    let isSpeaking = false;
-    let isListening = false;
     let themeColor = '#00d4ff';
 
     // ── 60 FPS ULTRON REACTOR CANVAS ──
@@ -385,7 +451,7 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
-      const radius = 220;
+      const radius = 200;
 
       // Outer Hexagonal / Titanium chassis glow
       ctx.save();
@@ -428,7 +494,7 @@
       ctx.restore();
 
       // Dynamic Voice-reactive Center Iris
-      const pulseR = radius * 0.3 + (audioLevel * radius * 0.35);
+      const pulseR = radius * 0.28 + (audioLevel * radius * 0.38);
       const grad = ctx.createRadialGradient(cx, cy, 5, cx, cy, pulseR);
       grad.addColorStop(0, '#ffffff');
       grad.addColorStop(0.4, themeColor);
@@ -445,13 +511,18 @@
     }
     requestAnimationFrame(drawReactor);
 
-    // ── TELEMETRY DRIFT ──
-    setInterval(() => {
-      document.getElementById('cpuVal').innerText = (8 + Math.floor(Math.random() * 15)) + '%';
-      document.getElementById('memVal').innerText = (3.8 + (Math.random() * 0.6)).toFixed(1) + 'GB';
-    }, 2000);
+    // ── NATIVE BRIDGE INTERFACES ──
+    function updateTelemetry(batt, ramUsed, ramTotal) {
+      document.getElementById('battVal').innerText = batt + '%';
+      document.getElementById('ramVal').innerText = ramUsed + 'GB / ' + ramTotal + 'GB';
+    }
 
-    // ── NATIVE BRIDGE FUNCTIONS ──
+    function setTorchButtonState(on) {
+      const btn = document.getElementById('torchBtn');
+      if (on) btn.classList.add('active');
+      else btn.classList.remove('active');
+    }
+
     function toggleVoice() {
       if (typeof AndroidBridge !== 'undefined') {
         AndroidBridge.toggleVoiceRecognition();
@@ -468,6 +539,13 @@
       appendLog('You', val);
       if (typeof AndroidBridge !== 'undefined') {
         AndroidBridge.processTextCommand(val);
+      }
+    }
+
+    function sendQuickCommand(cmd) {
+      appendLog('You', cmd);
+      if (typeof AndroidBridge !== 'undefined') {
+        AndroidBridge.processTextCommand(cmd);
       }
     }
 
@@ -499,6 +577,8 @@
       document.getElementById('settingsModal').style.display = 'flex';
       if (typeof AndroidBridge !== 'undefined') {
         document.getElementById('apiKeyInput').value = AndroidBridge.getApiKey();
+        const v = AndroidBridge.getVoiceName();
+        if (v) document.getElementById('voiceSelect').value = v;
       }
     }
 
@@ -508,11 +588,14 @@
 
     function saveSettings() {
       const key = document.getElementById('apiKeyInput').value.trim();
+      const voice = document.getElementById('voiceSelect').value;
       if (typeof AndroidBridge !== 'undefined') {
         AndroidBridge.saveApiKey(key);
+        AndroidBridge.saveVoiceName(voice);
       }
+      document.getElementById('voiceLabel').innerText = voice.toUpperCase();
       closeSettings();
-      appendLog('SYS', 'Gemini API Key saved and initialized.');
+      appendLog('SYS', `Configuration saved. Active Voice: ${voice}`);
     }
 
     function setTheme(color) {
