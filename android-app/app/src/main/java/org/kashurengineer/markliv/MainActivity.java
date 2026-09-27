@@ -339,7 +339,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             );
 
             runJs("setAssistantState('THINKING', 0.3);");
-            sendWithModelFallback(body, new String[]{"gemini-flash-lite-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-latest"}, 0);
+            sendWithModelFallback(body, new String[]{
+                "gemini-2.0-flash",
+                "gemini-2.0-flash-lite",
+                "gemini-flash-lite-latest",
+                "gemini-3.1-flash-lite-preview",
+                "gemini-flash-latest",
+                "gemini-pro-latest"
+            }, 0);
 
         } catch (Exception e) {
             runJs("appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");");
@@ -349,7 +356,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private void sendWithModelFallback(RequestBody body, String[] models, int modelIndex) {
         if (modelIndex >= models.length) {
             mainHandler.post(() -> {
-                runJs("appendLog('ERR', 'All AI models temporarily busy. Please retry in a moment.'); setAssistantState('ONLINE', 0.1);");
+                runJs("appendLog('ERR', 'All AI models temporarily busy (503). Please retry in a moment.'); setAssistantState('ONLINE', 0.1);");
             });
             return;
         }
@@ -371,8 +378,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                if (response.isSuccessful() && response.body() != null) {
-                    try {
+                try {
+                    if (response.isSuccessful() && response.body() != null) {
                         String resStr = response.body().string();
                         JSONObject json = new JSONObject(resStr);
                         JSONArray candidates = json.optJSONArray("candidates");
@@ -402,12 +409,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                             });
                             return;
                         }
-                    } catch (Exception e) {
-                        mainHandler.post(() -> runJs("appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");"));
-                        return;
                     }
+                } catch (Exception e) {
+                    mainHandler.post(() -> runJs("appendLog('ERR', " + JSONObject.quote(e.getMessage()) + ");"));
+                    return;
+                } finally {
+                    response.close();
                 }
-                
+
                 // If 503 / 429 / 404, smoothly fallback to next model
                 sendWithModelFallback(body, models, modelIndex + 1);
             }
