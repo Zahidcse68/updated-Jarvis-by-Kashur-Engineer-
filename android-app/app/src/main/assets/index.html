@@ -366,7 +366,7 @@
       <span id="statusLabel">LIVE LISTENING</span>
     </div>
     <div class="header-btns">
-      <button class="icon-btn" id="headerMuteBtn" onclick="AndroidBridge.toggleMute()" title="Mute Microphone">🎤</button>
+      <button class="icon-btn" id="headerMuteBtn" onclick="toggleMuteInUi()" title="Mute Microphone">🎤</button>
       <button class="icon-btn" id="torchBtn" onclick="AndroidBridge.toggleTorch()" title="Flashlight Torch">🔦</button>
       <button class="icon-btn" onclick="AndroidBridge.openCamera()" title="Camera Vision">📷</button>
       <button class="icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
@@ -413,7 +413,7 @@
       <button class="btn-send" onclick="sendText()">SEND</button>
     </div>
     <div class="action-row">
-      <button class="btn-mute" id="muteBtn" onclick="AndroidBridge.toggleMute()">
+      <button class="btn-mute" id="muteBtn" onclick="toggleMuteInUi()">
         <span id="muteIcon">🎙️</span> <span id="muteText">LIVE LISTENING (TAP TO MUTE)</span>
       </button>
     </div>
@@ -525,7 +525,19 @@
     requestAnimationFrame(drawReactor);
 
     // ── MUTE / LIVE LISTENING TOGGLE ──
+    let isUiMuted = false;
+
+    function toggleMuteInUi() {
+      if (typeof AndroidBridge !== 'undefined') {
+        AndroidBridge.toggleMute();
+      } else {
+        isUiMuted = !isUiMuted;
+        setMuteState(isUiMuted);
+      }
+    }
+
     function setMuteState(muted) {
+      isUiMuted = muted;
       const muteBtn = document.getElementById('muteBtn');
       const muteText = document.getElementById('muteText');
       const muteIcon = document.getElementById('muteIcon');
