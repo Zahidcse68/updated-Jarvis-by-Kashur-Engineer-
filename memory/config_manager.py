@@ -429,3 +429,14 @@ def save_plugin_enabled(plugin_name: str, enabled: bool) -> None:
     plugins_cfg[plugin_name] = enabled
     data["plugins_enabled"] = plugins_cfg
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+
+
+def get_hud_style() -> str:
+    """Return HUD visual style ('face' or 'core'). Defaults to 'face'."""
+    return str(load_api_keys().get("hud_style", "face")).strip().lower() or "face"
+
+
+def save_hud_style(style: str) -> None:
+    """Persist the selected HUD visual style ('face' or 'core')."""
+    s = "core" if str(style).strip().lower() == "core" else "face"
+    _patch_config(hud_style=s)

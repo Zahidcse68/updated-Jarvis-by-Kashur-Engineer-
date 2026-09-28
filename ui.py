@@ -3890,7 +3890,7 @@ class MainWindow(QMainWindow):
         self._gesture_btn.setFixedHeight(26)
         self._gesture_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._gesture_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._gesture_btn.setToolTip("Toggle Camera Hand Gestures (Swipe HUD & 2-Hand Zoom)")
+        self._gesture_btn.setToolTip("Toggle Hand Swipe Gestures (Swipe Left: Arc Reactor, Swipe Right: Face Avatar, Swipe Up: Themes)")
         self._gesture_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {C.TEXT_DIM};
@@ -4275,12 +4275,11 @@ class MainWindow(QMainWindow):
             self._gesture_tracker = GestureTracker(
                 camera_index=cam_idx,
                 on_swipe=lambda d: self._gesture_swipe_sig.emit(d),
-                on_zoom=lambda s: self._gesture_zoom_sig.emit(s),
                 on_pan=lambda dx, dy: self._gesture_pan_sig.emit(dx, dy),
             )
             if self._gesture_tracker.start():
-                self.hud.show_gesture_feedback("◈ GESTURE TRACKING ON")
-                self._log.append_log("SYS: Gesture Tracking activated (Hand Swipe & 2-Hand Zoom enabled).")
+                self.hud.show_gesture_feedback("◈ HAND SWIPE ACTIVE")
+                self._log.append_log("SYS: Hand Swipe Gesture Control activated (Swipe Left/Right to change HUD).")
                 if hasattr(self, '_gesture_btn'):
                     self._gesture_btn.setChecked(True)
             else:
@@ -4297,37 +4296,72 @@ class MainWindow(QMainWindow):
             if hasattr(self, '_gesture_btn'):
                 self._gesture_btn.setChecked(False)
 
+    _THEME_PALETTES = [
+        ("#00d4ff", "CYAN JARVIS"),
+        ("#ff3355", "CRIMSON ULTRON"),
+        ("#ffaa00", "GOLD MARK LIV"),
+        ("#00ff88", "MATRIX EMERALD"),
+        ("#a855f7", "CYBER VIOLET"),
+        ("#38bdf8", "STARK BLUE"),
+    ]
+
     def _on_gesture_swipe(self, direction: str):
         direction = (direction or "").lower()
         if direction == "left":
+            # Hand Swipe Left -> Switch HUD to Ultron Arc Reactor Core
             self.hud.glance(-1.0, 0.0, hold=0.6)
-            if hasattr(self, '_content_panel') and self._content_panel.isVisible():
-                self._content_panel.hide()
-            if hasattr(self, '_quiz_panel') and self._quiz_panel.isVisible():
-                self._quiz_panel.hide()
-            self.hud.show_gesture_feedback("◈ HAND SWIPE ◀ LEFT")
+            self.hud.hud_style = "core"
+            self.hud.update()
+            self.hud.show_gesture_feedback("◈ HUD: ULTRON ARC REACTOR ⚡")
+            self._log.append_log("HUD: Switched visual mode to Ultron Arc Reactor.")
+            try:
+                from memory.config_manager import save_hud_style
+                save_hud_style("core")
+            except Exception:
+                pass
         elif direction == "right":
+            # Hand Swipe Right -> Switch HUD to 3D Holographic Face Avatar
             self.hud.glance(1.0, 0.0, hold=0.6)
-            if hasattr(self, '_drawer_btn') and not self._drawer_btn.isChecked():
-                self._drawer_btn.setChecked(True)
-                self._toggle_drawer(True)
-            self.hud.show_gesture_feedback("◈ HAND SWIPE ▶ RIGHT")
+            self.hud.hud_style = "face"
+            self.hud.update()
+            self.hud.show_gesture_feedback("◈ HUD: 3D FACE AVATAR 👤")
+            self._log.append_log("HUD: Switched visual mode to 3D Holographic Avatar.")
+            try:
+                from memory.config_manager import save_hud_style
+                save_hud_style("face")
+            except Exception:
+                pass
         elif direction == "up":
+            # Hand Swipe Up -> Cycle HUD Theme Accent Colors
             self.hud.glance(0.0, 1.0, hold=0.5)
-            self.hud.set_gesture_scale(1.0)
-            self.hud.show_gesture_feedback("◈ HAND SWIPE ▲ UP (ZOOM RESET 1.0x)")
+            self._current_theme_idx = (getattr(self, '_current_theme_idx', 0) + 1) % len(self._THEME_PALETTES)
+            hex_col, name = self._THEME_PALETTES[self._current_theme_idx]
+            old_pal = current_palette()
+            if apply_ui_accent(hex_col):
+                retheme_all_widgets(old_pal, current_palette())
+                self.hud.show_gesture_feedback(f"◈ THEME: {name} 🎨")
+                self._log.append_log(f"SYS: Theme accent changed to {name} ({hex_col}).")
+                try:
+                    _cfg = _read_full_config()
+                    _cfg["ui_color"] = hex_col
+                    (CONFIG_DIR / "api_keys.json").write_text(json.dumps(_cfg, indent=4), encoding="utf-8")
+                except Exception:
+                    pass
         elif direction == "down":
+            # Hand Swipe Down -> Reset Zoom Scale to 1.0x & center view
             self.hud.glance(0.0, -1.0, hold=0.5)
-            if hasattr(self, '_drawer_btn') and self._drawer_btn.isChecked():
-                self._drawer_btn.setChecked(False)
-                self._toggle_drawer(False)
-            self.hud.show_gesture_feedback("◈ HAND SWIPE ▼ DOWN")
+            self.hud.set_gesture_scale(1.0)
+            if hasattr(self, '_gesture_tracker') and self._gesture_tracker:
+                self._gesture_tracker._current_scale = 1.0
+                self._gesture_tracker._zoom_baseline_dist = None
+            self.hud.show_gesture_feedback("◈ HUD ZOOM RESET: 1.0x ⟲")
 
     def _on_gesture_zoom(self, scale: float):
         self.hud.set_gesture_scale(scale)
 
     def _on_gesture_pan(self, dx: float, dy: float):
         self.hud.glance(dx * 0.85, -dy * 0.85, hold=0.35)
+
 
 
     def _build_input_row(self) -> QHBoxLayout:
