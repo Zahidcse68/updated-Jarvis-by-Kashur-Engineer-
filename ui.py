@@ -5,6 +5,7 @@ import math
 import os
 import platform
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -184,6 +185,39 @@ def retheme_all_widgets(old: dict[str, str], new: dict[str, str]) -> None:
 
 def qcol(h: str, a: int = 255) -> QColor:
     c = QColor(h); c.setAlpha(a); return c
+
+
+def _play_jarvis_hologram_sound():
+    """Synthesize and play an instant JARVIS holographic sci-fi opening sweep."""
+    def _synth():
+        try:
+            if _OS == "Windows":
+                import winsound
+                import struct
+                import math
+                sr = 22050
+                duration = 0.22
+                n_samples = int(sr * duration)
+                data = bytearray()
+                for i in range(n_samples):
+                    t = i / sr
+                    f1 = 520 + 820 * (t / duration) ** 1.5
+                    f2 = 1040 + 1300 * (t / duration) ** 1.2
+                    env = (1.0 - (t / duration) ** 1.8) * min(1.0, t / 0.012)
+                    val = 0.55 * math.sin(2 * math.pi * f1 * t) + 0.45 * math.sin(2 * math.pi * f2 * t)
+                    sample = int(max(-32767, min(32767, val * env * 22000)))
+                    data.extend(struct.pack('<h', sample))
+                header = struct.pack(
+                    '<4sI4s4sIHHIIHH4sI',
+                    b'RIFF', 36 + len(data), b'WAVE',
+                    b'fmt ', 16, 1, 1, sr, sr * 2, 2, 16,
+                    b'data', len(data)
+                )
+                winsound.PlaySound(header + bytes(data), winsound.SND_MEMORY | winsound.SND_ASYNC)
+        except Exception:
+            pass
+    threading.Thread(target=_synth, daemon=True, name="jarvis-holo-sound").start()
+
 
 
 # ── Windows GPU via NVML DLL (no subprocess, no console window) ──────────────
@@ -4307,6 +4341,18 @@ class MainWindow(QMainWindow):
 
     def _on_gesture_swipe(self, direction: str):
         direction = (direction or "").lower()
+        if hasattr(self, '_content_panel') and self._content_panel.isVisible():
+            # If News/Briefings panel is open, hand swipe controls the news carousel!
+            if direction == "left":
+                self._next_news_item()
+                return
+            elif direction == "right":
+                self._prev_news_item()
+                return
+            elif direction == "down":
+                self._close_content_panel()
+                return
+
         if direction == "left":
             # Hand Swipe Left -> Switch HUD to Ultron Arc Reactor Core
             self.hud.glance(-1.0, 0.0, hold=0.6)
@@ -4348,21 +4394,18 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
         elif direction == "down":
-            # Hand Swipe Down -> Reset Zoom Scale to 1.0x & center view
+            # Hand Swipe Down -> Toggle Quick Drawer
             self.hud.glance(0.0, -1.0, hold=0.5)
-            self.hud.set_gesture_scale(1.0)
-            if hasattr(self, '_gesture_tracker') and self._gesture_tracker:
-                self._gesture_tracker._current_scale = 1.0
-                self._gesture_tracker._zoom_baseline_dist = None
-            self.hud.show_gesture_feedback("◈ HUD ZOOM RESET: 1.0x ⟲")
+            if hasattr(self, '_drawer_btn'):
+                st = not self._drawer_btn.isChecked()
+                self._drawer_btn.setChecked(st)
+                self._toggle_drawer(st)
 
     def _on_gesture_zoom(self, scale: float):
-        self.hud.set_gesture_scale(scale)
+        pass
 
     def _on_gesture_pan(self, dx: float, dy: float):
         self.hud.glance(dx * 0.85, -dy * 0.85, hold=0.35)
-
-
 
     def _build_input_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(5)
@@ -4397,68 +4440,96 @@ class MainWindow(QMainWindow):
 
     def _build_content_panel(self) -> QWidget:
         """
-        Collapsible panel below the HUD — shows search results, news, briefings.
-        Hidden by default; appears when show_content() is called.
+        Collapsible holographic glassmorphic news & briefing carousel panel.
+        Contains inside-border navigation arrows (◀ / ▶) and prominent close cross (✕).
         """
         w = QWidget()
         w.setObjectName("ContentPanel")
         w.setStyleSheet(f"""
             QWidget#ContentPanel {{
                 background: {C.PANEL};
-                border-top: 1px solid {C.BORDER_B};
+                border-top: 2px solid {C.PRI_DIM};
+                border-bottom: 1px solid {C.BORDER_B};
             }}
         """)
         w.hide()
 
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(12, 7, 12, 8)
-        lay.setSpacing(5)
+        lay.setContentsMargins(10, 6, 10, 8)
+        lay.setSpacing(4)
 
         # ── header row ───────────────────────────────────────────────────────
-        hdr = QHBoxLayout(); hdr.setSpacing(6)
+        hdr = QHBoxLayout(); hdr.setSpacing(8)
 
         dot = QLabel("◈")
-        dot.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        dot.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
         dot.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         hdr.addWidget(dot)
 
-        self._content_title_lbl = QLabel("BRIEFING")
+        self._content_title_lbl = QLabel("NEWS & BRIEFINGS")
         self._content_title_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._content_title_lbl.setStyleSheet(
             f"color: {C.PRI}; background: transparent; letter-spacing: 1px;"
         )
         hdr.addWidget(self._content_title_lbl)
+
         hdr.addStretch()
+
+        # Carousel Page Indicator
+        self._carousel_counter_lbl = QLabel("[ 1 / 1 ]")
+        self._carousel_counter_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._carousel_counter_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(self._carousel_counter_lbl)
 
         self._content_ts_lbl = QLabel("")
         self._content_ts_lbl.setFont(QFont("Courier New", 7))
         self._content_ts_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         hdr.addWidget(self._content_ts_lbl)
 
-        dismiss = QPushButton("DISMISS  ✕")
-        dismiss.setFont(QFont("Courier New", 7))
-        dismiss.setFixedHeight(18)
-        dismiss.setCursor(Qt.CursorShape.PointingHandCursor)
-        dismiss.setStyleSheet(f"""
+        # Prominent Close Cross Button
+        self._content_close_btn = QPushButton("✕")
+        self._content_close_btn.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
+        self._content_close_btn.setFixedSize(22, 22)
+        self._content_close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._content_close_btn.setToolTip("Close News Panel (or Swipe Down)")
+        self._content_close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {C.TEXT_DIM};
-                border: 1px solid {C.BORDER}; border-radius: 2px; padding: 0 5px;
+                border: 1px solid {C.BORDER}; border-radius: 3px;
             }}
-            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+            QPushButton:hover {{ color: {C.RED}; border-color: {C.RED}; background: rgba(255, 51, 85, 0.15); }}
         """)
-        dismiss.clicked.connect(w.hide)
-        hdr.addWidget(dismiss)
+        self._content_close_btn.clicked.connect(self._close_content_panel)
+        hdr.addWidget(self._content_close_btn)
         lay.addLayout(hdr)
 
-        # ── separator ─────────────────────────────────────────────────────────
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {C.BORDER};"); lay.addWidget(sep)
+        # ── body row with inside-border navigation arrows ────────────────────
+        body_row = QHBoxLayout(); body_row.setSpacing(6)
 
-        # ── text display ──────────────────────────────────────────────────────
+        # Inside Left Border Arrow (◀ PREV)
+        self._nav_left_btn = QPushButton("◀")
+        self._nav_left_btn.setFixedWidth(28)
+        self._nav_left_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self._nav_left_btn.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+        self._nav_left_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._nav_left_btn.setToolTip("Previous News (or Swipe Right)")
+        self._nav_left_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 13, 20, 0.80); color: {C.PRI};
+                border: 1px solid {C.BORDER}; border-radius: 4px;
+            }}
+            QPushButton:hover {{
+                color: {C.WHITE}; border-color: {C.PRI}; background: {C.PRI_GHO};
+            }}
+        """)
+        self._nav_left_btn.clicked.connect(self._prev_news_item)
+        body_row.addWidget(self._nav_left_btn)
+
+        # Middle Text Display Area (Transparent / Glassmorphic)
         self._content_display = QTextEdit()
         self._content_display.setReadOnly(True)
-        self._content_display.setFont(QFont("Courier New", 8))
-        self._content_display.setMinimumHeight(60)
+        self._content_display.setFont(QFont("Courier New", 9))
+        self._content_display.setMinimumHeight(70)
         self._content_display.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -4467,8 +4538,8 @@ class MainWindow(QMainWindow):
                 background: {C.DARK};
                 color: {C.TEXT};
                 border: 1px solid {C.BORDER};
-                border-radius: 3px;
-                padding: 6px 8px;
+                border-radius: 4px;
+                padding: 6px 10px;
                 selection-background-color: {C.PRI_GHO};
             }}
             QScrollBar:vertical {{
@@ -4481,27 +4552,101 @@ class MainWindow(QMainWindow):
                 height: 0; border: none;
             }}
         """)
-        lay.addWidget(self._content_display)
+        body_row.addWidget(self._content_display)
 
+        # Inside Right Border Arrow (NEXT ▶)
+        self._nav_right_btn = QPushButton("▶")
+        self._nav_right_btn.setFixedWidth(28)
+        self._nav_right_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self._nav_right_btn.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+        self._nav_right_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._nav_right_btn.setToolTip("Next News (or Swipe Left)")
+        self._nav_right_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 13, 20, 0.80); color: {C.PRI};
+                border: 1px solid {C.BORDER}; border-radius: 4px;
+            }}
+            QPushButton:hover {{
+                color: {C.WHITE}; border-color: {C.PRI}; background: {C.PRI_GHO};
+            }}
+        """)
+        self._nav_right_btn.clicked.connect(self._next_news_item)
+        body_row.addWidget(self._nav_right_btn)
+
+        lay.addLayout(body_row)
         return w
 
     def _show_content(self, title: str, text: str):
-        """Slot — runs on Qt main thread. Updates and shows the content panel."""
+        """Slot — runs on Qt main thread. Updates and displays news carousel with sci-fi sound."""
         import time as _time
-        # The panel opens below the head, so the head looks down at it. It is a
-        # tiny thing that answers "did that land?" before you read a word.
+        _play_jarvis_hologram_sound()
         self.hud.glance(0.0, -0.85, hold=1.3)
         self._content_title_lbl.setText(title.upper()[:48])
         self._content_ts_lbl.setText(_time.strftime("%H:%M:%S"))
-        self._content_display.setPlainText(text)
-        self._content_display.moveCursor(
-            self._content_display.textCursor().MoveOperation.Start
-        )
+
+        raw = (text or "").strip()
+        items = []
+        # Parse by numbered items, bullets, or paragraphs
+        parts = re.split(r'\n\s*(?:(?:\d+[\.\)]|\-|\*|•|##+)\s+)', raw)
+        if len(parts) > 1:
+            for p in parts:
+                p_str = p.strip()
+                if p_str:
+                    items.append(p_str)
+        else:
+            paragraphs = [p.strip() for p in raw.split("\n\n") if p.strip()]
+            if len(paragraphs) > 1:
+                items = paragraphs
+            else:
+                items = [raw] if raw else ["No news items received."]
+
+        self._news_items = items
+        self._current_news_idx = 0
+        self._update_news_card()
+
         first_show = not self._content_panel.isVisible()
         self._content_panel.show()
+        self._content_panel.raise_()
         if first_show:
             total = self._center_split.height()
-            self._center_split.setSizes([max(total - 220, 120), 220])
+            self._center_split.setSizes([max(total - 230, 120), 230])
+
+    def _update_news_card(self):
+        if not hasattr(self, '_news_items') or not self._news_items:
+            self._content_display.setPlainText("")
+            if hasattr(self, '_carousel_counter_lbl'):
+                self._carousel_counter_lbl.setText("[ 0 / 0 ]")
+            return
+        total = len(self._news_items)
+        idx = max(0, min(total - 1, self._current_news_idx))
+        self._current_news_idx = idx
+        if hasattr(self, '_carousel_counter_lbl'):
+            self._carousel_counter_lbl.setText(f"[ {idx + 1} / {total} ]")
+        item_text = self._news_items[idx]
+        self._content_display.setPlainText(item_text)
+        self._content_display.moveCursor(self._content_display.textCursor().MoveOperation.Start)
+
+    def _next_news_item(self):
+        if hasattr(self, '_news_items') and len(self._news_items) > 1:
+            self._current_news_idx = (self._current_news_idx + 1) % len(self._news_items)
+            self._update_news_card()
+            _play_jarvis_hologram_sound()
+            self.hud.show_gesture_feedback(f"◈ NEWS [{self._current_news_idx + 1}/{len(self._news_items)}] ▶")
+            self.hud.glance(1.0, -0.4, hold=0.5)
+
+    def _prev_news_item(self):
+        if hasattr(self, '_news_items') and len(self._news_items) > 1:
+            self._current_news_idx = (self._current_news_idx - 1) % len(self._news_items)
+            self._update_news_card()
+            _play_jarvis_hologram_sound()
+            self.hud.show_gesture_feedback(f"◈ NEWS [{self._current_news_idx + 1}/{len(self._news_items)}] ◀")
+            self.hud.glance(-1.0, -0.4, hold=0.5)
+
+    def _close_content_panel(self):
+        if hasattr(self, '_content_panel'):
+            self._content_panel.hide()
+            self.hud.show_gesture_feedback("◈ NEWS CLOSED ✕")
+
 
     # ── document review ──────────────────────────────────────────────────────
     # Rendered as rich text into the content panel that already exists, rather
