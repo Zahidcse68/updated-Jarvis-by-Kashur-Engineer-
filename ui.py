@@ -4513,66 +4513,42 @@ class MainWindow(QMainWindow):
     ]
 
     def _on_gesture_swipe(self, direction: str):
+        """
+        Hand swipe ONLY switches between the TWO HUD modes:
+        1. JARVIS 3D Holographic Face Avatar ('face')
+        2. Ultron Arc Reactor Core ('core')
+        No theme colors and no news hijacking.
+        """
         direction = (direction or "").lower()
-        if hasattr(self, '_content_panel') and self._content_panel.isVisible():
-            # If News/Briefings panel is open, hand swipe controls the news carousel!
-            if direction == "left":
-                self._next_news_item()
-                return
-            elif direction == "right":
-                self._prev_news_item()
-                return
-            elif direction == "down":
-                self._close_content_panel()
-                return
+        current = getattr(self.hud, 'hud_style', 'face')
 
         if direction == "left":
-            # Hand Swipe Left -> Switch HUD to Ultron Arc Reactor Core
-            self.hud.glance(-1.0, 0.0, hold=0.6)
-            self.hud.hud_style = "core"
-            self.hud.update()
-            self.hud.show_gesture_feedback("◈ HUD: ULTRON ARC REACTOR ⚡")
-            self._log.append_log("HUD: Switched visual mode to Ultron Arc Reactor.")
-            try:
-                from memory.config_manager import save_hud_style
-                save_hud_style("core")
-            except Exception:
-                pass
+            new_style = "core"
         elif direction == "right":
-            # Hand Swipe Right -> Switch HUD to 3D Holographic Face Avatar
+            new_style = "face"
+        else:
+            new_style = "core" if current == "face" else "face"
+
+        self.hud.hud_style = new_style
+        self.hud.update()
+        if hasattr(self, '_refresh_hud_btn'):
+            self._refresh_hud_btn()
+        _play_jarvis_hologram_sound()
+
+        if new_style == "core":
+            self.hud.glance(-1.0, 0.0, hold=0.6)
+            self.hud.show_gesture_feedback("◈ HUD: ULTRON ARC REACTOR ⚡")
+            self._log.append_log("HUD: Switched to Ultron Arc Reactor via Hand Swipe.")
+        else:
             self.hud.glance(1.0, 0.0, hold=0.6)
-            self.hud.hud_style = "face"
-            self.hud.update()
-            self.hud.show_gesture_feedback("◈ HUD: 3D FACE AVATAR 👤")
-            self._log.append_log("HUD: Switched visual mode to 3D Holographic Avatar.")
-            try:
-                from memory.config_manager import save_hud_style
-                save_hud_style("face")
-            except Exception:
-                pass
-        elif direction == "up":
-            # Hand Swipe Up -> Cycle HUD Theme Accent Colors
-            self.hud.glance(0.0, 1.0, hold=0.5)
-            self._current_theme_idx = (getattr(self, '_current_theme_idx', 0) + 1) % len(self._THEME_PALETTES)
-            hex_col, name = self._THEME_PALETTES[self._current_theme_idx]
-            old_pal = current_palette()
-            if apply_ui_accent(hex_col):
-                retheme_all_widgets(old_pal, current_palette())
-                self.hud.show_gesture_feedback(f"◈ THEME: {name} 🎨")
-                self._log.append_log(f"SYS: Theme accent changed to {name} ({hex_col}).")
-                try:
-                    _cfg = _read_full_config()
-                    _cfg["ui_color"] = hex_col
-                    (CONFIG_DIR / "api_keys.json").write_text(json.dumps(_cfg, indent=4), encoding="utf-8")
-                except Exception:
-                    pass
-        elif direction == "down":
-            # Hand Swipe Down -> Toggle Quick Drawer
-            self.hud.glance(0.0, -1.0, hold=0.5)
-            if hasattr(self, '_drawer_btn'):
-                st = not self._drawer_btn.isChecked()
-                self._drawer_btn.setChecked(st)
-                self._toggle_drawer(st)
+            self.hud.show_gesture_feedback("◈ HUD: JARVIS 3D FACE AVATAR 👤")
+            self._log.append_log("HUD: Switched to JARVIS 3D Hologram Face via Hand Swipe.")
+
+        try:
+            from memory.config_manager import save_hud_style
+            save_hud_style(new_style)
+        except Exception:
+            pass
 
     def _on_gesture_zoom(self, scale: float):
         pass
