@@ -485,14 +485,109 @@ class HudCanvas(QWidget):
         self.gesture_banner_text = ""
         self.gesture_banner_alpha = 0.0
 
+        # Floating Holographic News & Intel Cards
+        self.floating_news: list[dict] = []
+        self._drag_card: dict | None = None
+        self._drag_offset: tuple[float, float] = (0.0, 0.0)
+        self._drag_start_pos: tuple[float, float] | None = None
+        self._over_trash: bool = False
+        self.on_card_click = None
+
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
         self._tmr.start(16)
 
+    def set_floating_news(self, items: list[dict]) -> None:
+        """Position holographic floating news boxes on left and right of HUD."""
+        self.floating_news = []
+        W, H = max(400, self.width()), max(300, self.height())
+        card_w, card_h = 165.0, 72.0
+        for i, it in enumerate(items[:6]):
+            side = "left" if i % 2 == 0 else "right"
+            row = i // 2
+            if side == "left":
+                x = 16.0
+                y = 55.0 + row * 82.0
+            else:
+                x = max(16.0, float(W - card_w - 16.0))
+                y = 55.0 + row * 82.0
+            title = it.get("title", f"News #{i+1}")
+            body = it.get("body", "")
+            self.floating_news.append({
+                "id": i,
+                "title": title,
+                "body": body,
+                "x": x,
+                "y": y,
+                "w": card_w,
+                "h": card_h,
+                "side": side,
+            })
+        _play_jarvis_hologram_sound()
+        self.show_gesture_feedback(f"◈ {len(self.floating_news)} NEWS WIDGETS SPAWNED")
+        self.update()
+
+    def mousePressEvent(self, event):
+        pos = event.position() if hasattr(event, 'position') else event.pos()
+        px, py = pos.x(), pos.y()
+        for card in reversed(self.floating_news):
+            rx, ry, rw, rh = card['x'], card['y'], card['w'], card['h']
+            if rx <= px <= rx + rw and ry <= py <= ry + rh:
+                if px >= rx + rw - 22 and py <= ry + 22:
+                    self.floating_news.remove(card)
+                    _play_jarvis_hologram_sound()
+                    self.show_gesture_feedback("◈ NEWS CARD CLOSED ✕")
+                    self.update()
+                    return
+                self._drag_card = card
+                self._drag_start_pos = (px, py)
+                self._drag_offset = (px - rx, py - ry)
+                self._over_trash = False
+                self.update()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        pos = event.position() if hasattr(event, 'position') else event.pos()
+        px, py = pos.x(), pos.y()
+        if self._drag_card:
+            W, H = self.width(), self.height()
+            self._drag_card['x'] = max(4.0, min(W - self._drag_card['w'] - 4.0, px - self._drag_offset[0]))
+            self._drag_card['y'] = max(4.0, min(H - self._drag_card['h'] - 4.0, py - self._drag_offset[1]))
+            self._over_trash = (px >= W - 145 and py >= H - 65)
+            self.update()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        pos = event.position() if hasattr(event, 'position') else event.pos()
+        px, py = pos.x(), pos.y()
+        if self._drag_card:
+            card = self._drag_card
+            self._drag_card = None
+            W, H = self.width(), self.height()
+            if px >= W - 145 and py >= H - 65:
+                if card in self.floating_news:
+                    self.floating_news.remove(card)
+                _play_jarvis_hologram_sound()
+                self.show_gesture_feedback("◈ DISPOSED IN TRASH 🗑️")
+                self._over_trash = False
+                self.update()
+                return
+            self._over_trash = False
+            if self._drag_start_pos:
+                dist = math.hypot(px - self._drag_start_pos[0], py - self._drag_start_pos[1])
+                if dist < 6.0:
+                    _play_jarvis_hologram_sound()
+                    if callable(getattr(self, 'on_card_click', None)):
+                        self.on_card_click(card)
+            self.update()
+            return
+        super().mouseReleaseEvent(event)
+
     def set_gesture_scale(self, scale: float) -> None:
         """Dynamically zoom the 3D Hologram / Arc Reactor with 2-hand gesture."""
         self.gesture_scale = max(0.45, min(2.8, float(scale)))
-        self.show_gesture_feedback(f"◈ 2-HAND ZOOM: {self.gesture_scale:.1f}x")
         self.update()
 
     def show_gesture_feedback(self, text: str) -> None:
@@ -925,6 +1020,83 @@ class HudCanvas(QWidget):
             p.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
             p.drawText(gb_rect, Qt.AlignmentFlag.AlignCenter, self.gesture_banner_text)
             p.restore()
+
+        # ── 10. Floating Holographic News Cards with Connector Arrows ──
+        if self.floating_news:
+            p.save()
+            for card in self.floating_news:
+                cx_c = card['x']
+                cy_c = card['y']
+                cw_c = card['w']
+                ch_c = card['h']
+
+                # Holographic Connector Arrow
+                if cx_c < cx:
+                    p_card = QPointF(cx_c + cw_c, cy_c + ch_c / 2.0)
+                    p_av   = QPointF(cx - 70, cy)
+                    p.setPen(QPen(qcol(C.PRI_DIM, 150), 1.2, Qt.PenStyle.DashLine))
+                    p.drawLine(p_card, p_av)
+                    p.setPen(QPen(qcol(C.PRI, 240), 1.6))
+                    p.drawLine(QLineF(p_card.x(), p_card.y(), p_card.x() + 7, p_card.y() - 5))
+                    p.drawLine(QLineF(p_card.x(), p_card.y(), p_card.x() + 7, p_card.y() + 5))
+                else:
+                    p_card = QPointF(cx_c, cy_c + ch_c / 2.0)
+                    p_av   = QPointF(cx + 70, cy)
+                    p.setPen(QPen(qcol(C.PRI_DIM, 150), 1.2, Qt.PenStyle.DashLine))
+                    p.drawLine(p_card, p_av)
+                    p.setPen(QPen(qcol(C.PRI, 240), 1.6))
+                    p.drawLine(QLineF(p_card.x(), p_card.y(), p_card.x() - 7, p_card.y() - 5))
+                    p.drawLine(QLineF(p_card.x(), p_card.y(), p_card.x() - 7, p_card.y() + 5))
+
+                # Transparent Glass Card
+                is_dragged = (card == self._drag_card)
+                card_rect = QRectF(cx_c, cy_c, cw_c, ch_c)
+                p.setBrush(QBrush(qcol(C.PANEL, 215 if not is_dragged else 245)))
+                p.setPen(QPen(qcol(C.PRI if is_dragged else C.BORDER_B, 220), 1.4 if not is_dragged else 2.0))
+                p.drawRoundedRect(card_rect, 5, 5)
+
+                # Corner brackets
+                p.setPen(QPen(qcol(C.PRI, 255), 1.8))
+                m = 4
+                p.drawLine(QLineF(cx_c, cy_c + m, cx_c, cy_c))
+                p.drawLine(QLineF(cx_c, cy_c, cx_c + m, cy_c))
+                p.drawLine(QLineF(cx_c + cw_c - m, cy_c, cx_c + cw_c, cy_c))
+                p.drawLine(QLineF(cx_c + cw_c, cy_c, cx_c + cw_c, cy_c + m))
+
+                # Category Badge
+                p.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+                p.setPen(QPen(qcol(C.PRI_DIM, 255), 1))
+                p.drawText(QRectF(cx_c + 7, cy_c + 4, cw_c - 26, 12), Qt.AlignmentFlag.AlignLeft, "◈ INTEL")
+
+                # Close Button '✕'
+                p.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+                p.setPen(QPen(qcol(C.RED, 220), 1))
+                p.drawText(QRectF(cx_c + cw_c - 16, cy_c + 3, 12, 12), Qt.AlignmentFlag.AlignCenter, "✕")
+
+                # News Title
+                p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+                p.setPen(QPen(qcol(C.WHITE, 240), 1))
+                fm = p.fontMetrics()
+                elided = fm.elidedText(card['title'], Qt.TextElideMode.ElideRight, int(cw_c - 14))
+                p.drawText(QRectF(cx_c + 7, cy_c + 18, cw_c - 14, 34), Qt.TextFlag.TextWordWrap, elided)
+
+                # Action hint
+                p.setFont(QFont("Courier New", 7))
+                p.setPen(QPen(qcol(C.PRI, 200), 1))
+                p.drawText(QRectF(cx_c + 7, cy_c + ch_c - 15, cw_c - 14, 11), Qt.AlignmentFlag.AlignLeft, "CLICK ↗ | DRAG ✢")
+
+            # ── Draw Dustbin / Trash Can Zone ──
+            trash_rect = QRectF(W - 135, H - 56, 122, 38)
+            p.setBrush(QBrush(qcol(C.RED if self._over_trash else C.PANEL2, 160 if not self._over_trash else 230)))
+            p.setPen(QPen(qcol(C.RED if self._over_trash else C.BORDER_B, 255 if self._over_trash else 180),
+                          2.0 if self._over_trash else 1.2,
+                          Qt.PenStyle.SolidLine if self._over_trash else Qt.PenStyle.DashLine))
+            p.drawRoundedRect(trash_rect, 6, 6)
+            p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+            p.setPen(QPen(qcol(C.WHITE if self._over_trash else C.TEXT_DIM, 255), 1))
+            p.drawText(trash_rect, Qt.AlignmentFlag.AlignCenter, "🗑️ DROP TO DELETE" if self._over_trash else "🗑️ TRASH ZONE")
+            p.restore()
+
 
         # status text
         sy = _sy_status
@@ -3237,6 +3409,7 @@ class MainWindow(QMainWindow):
         # Center column: HUD + resizable content panel via QSplitter
         self.hud = HudCanvas(face_path, _display)
         self.hud.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.hud.on_card_click = self._on_floating_card_clicked
         self._content_panel = self._build_content_panel()
         self._quiz_panel = self._build_quiz_panel()
 
@@ -4604,12 +4777,32 @@ class MainWindow(QMainWindow):
         self._current_news_idx = 0
         self._update_news_card()
 
+        # Spawn floating rectangular news widgets on left & right of HUD with arrows
+        structured_cards = []
+        for i, it in enumerate(items[:6]):
+            lines = [l.strip(" #*-•") for l in it.strip().splitlines() if l.strip()]
+            t = lines[0] if lines else f"News #{i+1}"
+            b = it.strip()
+            structured_cards.append({"title": t, "body": b})
+        self.hud.set_floating_news(structured_cards)
+
         first_show = not self._content_panel.isVisible()
         self._content_panel.show()
         self._content_panel.raise_()
         if first_show:
             total = self._center_split.height()
             self._center_split.setSizes([max(total - 230, 120), 230])
+
+    def _on_floating_card_clicked(self, card: dict):
+        title = card.get("title", "NEWS")
+        body = card.get("body", "")
+        self._content_title_lbl.setText(title.upper()[:48])
+        self._content_display.setPlainText(body)
+        self._content_panel.show()
+        self._content_panel.raise_()
+        self.hud.show_gesture_feedback(f"◈ OPENED: {title[:18]} ↗")
+        self.hud.glance(0.0, -0.6, hold=1.0)
+
 
     def _update_news_card(self):
         if not hasattr(self, '_news_items') or not self._news_items:
