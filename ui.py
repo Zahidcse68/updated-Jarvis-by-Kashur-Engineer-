@@ -38,6 +38,11 @@ try:
 except Exception:      # pragma: no cover — HUD must never die over cosmetics
     HoloAvatar = None
 
+try:
+    from core.gesture_tracker import GestureTracker
+except Exception:
+    GestureTracker = None
+
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -441,9 +446,26 @@ class HudCanvas(QWidget):
         self._base_scale = 1.0    # slow "breathing" target; amp is added per-frame
         self._base_halo  = 55.0
 
+        # Hand Gesture Tracking State
+        self.gesture_scale = 1.0
+        self.gesture_banner_text = ""
+        self.gesture_banner_alpha = 0.0
+
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
         self._tmr.start(16)
+
+    def set_gesture_scale(self, scale: float) -> None:
+        """Dynamically zoom the 3D Hologram / Arc Reactor with 2-hand gesture."""
+        self.gesture_scale = max(0.45, min(2.8, float(scale)))
+        self.show_gesture_feedback(f"◈ 2-HAND ZOOM: {self.gesture_scale:.1f}x")
+        self.update()
+
+    def show_gesture_feedback(self, text: str) -> None:
+        """Display glowing HUD holographic feedback on gesture action."""
+        self.gesture_banner_text = text
+        self.gesture_banner_alpha = 1.0
+        self.update()
 
     def glance(self, dx: float, dy: float, hold: float = 1.1) -> None:
         """Ask the avatar to look somewhere for a moment (see HoloAvatar.glance)."""
@@ -582,6 +604,9 @@ class HudCanvas(QWidget):
         # a rate that changes with state jumps the rings the instant JARVIS
         # starts talking. Same lesson the head's sway taught.
         self._core_phase += min(0.10, max(0.0, dt))
+        if self.gesture_banner_alpha > 0.0:
+            self.gesture_banner_alpha = max(0.0, self.gesture_banner_alpha - dt * 0.55)
+
 
         if self._avatar is not None and self.hud_style == "face":
             self._avatar.step(dt, amp, speaking=self.speaking,
@@ -827,7 +852,7 @@ class HudCanvas(QWidget):
         if self._avatar is not None and self.hud_style == "face":
             _band_t = 12.0
             _band_h = max(60.0, _sy_status - 12.0 - _band_t)
-            _r_head = min(fw * 0.355, _band_h / (self._avatar.SPAN + 0.08))
+            _r_head = min(fw * 0.355, _band_h / (self._avatar.SPAN + 0.08)) * self.gesture_scale
             _head_cy = _band_t + (_band_h - self._avatar.SPAN * _r_head) / 2.0 + _r_head
 
             if self.muted:
@@ -851,8 +876,21 @@ class HudCanvas(QWidget):
         else:
             _band_t = 12.0
             _band_h = max(60.0, _sy_status - 12.0 - _band_t)
-            _r = min(W * 0.46, _band_h / 2.0)
+            _r = min(W * 0.46, _band_h / 2.0) * self.gesture_scale
             self._paint_core(p, cx, _band_t + _band_h / 2.0, _r, W, _band_h)
+
+        # ── Holographic Hand Gesture Banner ──
+        if self.gesture_banner_alpha > 0.02 and self.gesture_banner_text:
+            p.save()
+            gb_col = qcol(C.PRI, int(min(1.0, self.gesture_banner_alpha) * 255))
+            gb_bg = qcol(C.PANEL2, int(min(1.0, self.gesture_banner_alpha) * 220))
+            p.setPen(QPen(gb_col, 1.2))
+            p.setBrush(QBrush(gb_bg))
+            gb_rect = QRectF(cx - 150, 18, 300, 28)
+            p.drawRoundedRect(gb_rect, 6, 6)
+            p.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+            p.drawText(gb_rect, Qt.AlignmentFlag.AlignCenter, self.gesture_banner_text)
+            p.restore()
 
         # status text
         sy = _sy_status
@@ -3100,6 +3138,9 @@ class MainWindow(QMainWindow):
     _quiz_sig       = pyqtSignal(str, object, object)  # (topic, questions, grader)
     _quiz_hide_sig  = pyqtSignal()
     _review_sig     = pyqtSignal(str, str, object, object)  # document review payload
+    _gesture_swipe_sig = pyqtSignal(str)       # "left" | "right" | "up" | "down"
+    _gesture_zoom_sig  = pyqtSignal(float)     # scale factor from 2-hand gesture
+    _gesture_pan_sig   = pyqtSignal(float, float) # (dx, dy) avatar look pan
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -3259,6 +3300,10 @@ class MainWindow(QMainWindow):
         self._quiz_sig.connect(self._show_quiz)
         self._quiz_hide_sig.connect(self._hide_quiz)
         self._review_sig.connect(self._show_review)
+        self._gesture_swipe_sig.connect(self._on_gesture_swipe)
+        self._gesture_zoom_sig.connect(self._on_gesture_zoom)
+        self._gesture_pan_sig.connect(self._on_gesture_pan)
+        self._gesture_tracker = None
         self._cam_stop = threading.Event()
 
         # Camera preview overlay (child of central widget, positioned in resizeEvent)
@@ -3746,6 +3791,17 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_quick_drawer') and self._quick_drawer.isVisible():
             self._position_quick_drawer()
 
+    def closeEvent(self, event):
+        if self._gesture_tracker:
+            try:
+                self._gesture_tracker.stop()
+            except Exception:
+                pass
+            self._gesture_tracker = None
+        self.stop_camera_stream()
+        super().closeEvent(event)
+
+
     def _update_metrics(self):
         snap = _metrics.snapshot()
 
@@ -3828,6 +3884,24 @@ class MainWindow(QMainWindow):
         self._drawer_btn.setCheckable(True)
         self._drawer_btn.clicked.connect(self._toggle_drawer)
         lay.addWidget(self._drawer_btn)
+        lay.addSpacing(6)
+
+        self._gesture_btn = QPushButton("✋ GESTURES")
+        self._gesture_btn.setFixedHeight(26)
+        self._gesture_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._gesture_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._gesture_btn.setToolTip("Toggle Camera Hand Gestures (Swipe HUD & 2-Hand Zoom)")
+        self._gesture_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER}; border-radius: 4px; padding: 0 8px;
+            }}
+            QPushButton:hover {{ color: {C.PRI}; border-color: {C.PRI_DIM}; }}
+            QPushButton:checked {{ color: {C.PRI}; border-color: {C.PRI}; background: {C.PRI_GHO}; }}
+        """)
+        self._gesture_btn.setCheckable(True)
+        self._gesture_btn.clicked.connect(self._toggle_gestures)
+        lay.addWidget(self._gesture_btn)
         lay.addStretch()
 
         mid = QVBoxLayout(); mid.setSpacing(1)
@@ -4181,6 +4255,80 @@ class MainWindow(QMainWindow):
         self._quick_drawer.setFixedWidth(_W)
         self._quick_drawer.adjustSize()
         self._quick_drawer.setGeometry(12, 54, _W, self._quick_drawer.sizeHint().height())
+
+    def _toggle_gestures(self, checked: bool = None):
+        if checked is None:
+            checked = getattr(self, '_gesture_btn', None) and self._gesture_btn.isChecked()
+        if checked:
+            if GestureTracker is None:
+                self._log.append_log("ERR: Gesture Tracker not available (opencv/mediapipe missing).")
+                if hasattr(self, '_gesture_btn'):
+                    self._gesture_btn.setChecked(False)
+                return
+            cam_idx = 0
+            try:
+                cfg = _read_full_config()
+                cam_idx = int(cfg.get("camera_index", 0))
+            except Exception:
+                pass
+            
+            self._gesture_tracker = GestureTracker(
+                camera_index=cam_idx,
+                on_swipe=lambda d: self._gesture_swipe_sig.emit(d),
+                on_zoom=lambda s: self._gesture_zoom_sig.emit(s),
+                on_pan=lambda dx, dy: self._gesture_pan_sig.emit(dx, dy),
+            )
+            if self._gesture_tracker.start():
+                self.hud.show_gesture_feedback("◈ GESTURE TRACKING ON")
+                self._log.append_log("SYS: Gesture Tracking activated (Hand Swipe & 2-Hand Zoom enabled).")
+                if hasattr(self, '_gesture_btn'):
+                    self._gesture_btn.setChecked(True)
+            else:
+                self._gesture_tracker = None
+                self._log.append_log("ERR: Failed to open camera for gesture tracking.")
+                if hasattr(self, '_gesture_btn'):
+                    self._gesture_btn.setChecked(False)
+        else:
+            if self._gesture_tracker:
+                self._gesture_tracker.stop()
+                self._gesture_tracker = None
+            self.hud.show_gesture_feedback("◈ GESTURE TRACKING OFF")
+            self._log.append_log("SYS: Gesture Tracking stopped.")
+            if hasattr(self, '_gesture_btn'):
+                self._gesture_btn.setChecked(False)
+
+    def _on_gesture_swipe(self, direction: str):
+        direction = (direction or "").lower()
+        if direction == "left":
+            self.hud.glance(-1.0, 0.0, hold=0.6)
+            if hasattr(self, '_content_panel') and self._content_panel.isVisible():
+                self._content_panel.hide()
+            if hasattr(self, '_quiz_panel') and self._quiz_panel.isVisible():
+                self._quiz_panel.hide()
+            self.hud.show_gesture_feedback("◈ HAND SWIPE ◀ LEFT")
+        elif direction == "right":
+            self.hud.glance(1.0, 0.0, hold=0.6)
+            if hasattr(self, '_drawer_btn') and not self._drawer_btn.isChecked():
+                self._drawer_btn.setChecked(True)
+                self._toggle_drawer(True)
+            self.hud.show_gesture_feedback("◈ HAND SWIPE ▶ RIGHT")
+        elif direction == "up":
+            self.hud.glance(0.0, 1.0, hold=0.5)
+            self.hud.set_gesture_scale(1.0)
+            self.hud.show_gesture_feedback("◈ HAND SWIPE ▲ UP (ZOOM RESET 1.0x)")
+        elif direction == "down":
+            self.hud.glance(0.0, -1.0, hold=0.5)
+            if hasattr(self, '_drawer_btn') and self._drawer_btn.isChecked():
+                self._drawer_btn.setChecked(False)
+                self._toggle_drawer(False)
+            self.hud.show_gesture_feedback("◈ HAND SWIPE ▼ DOWN")
+
+    def _on_gesture_zoom(self, scale: float):
+        self.hud.set_gesture_scale(scale)
+
+    def _on_gesture_pan(self, dx: float, dy: float):
+        self.hud.glance(dx * 0.85, -dy * 0.85, hold=0.35)
+
 
     def _build_input_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(5)
