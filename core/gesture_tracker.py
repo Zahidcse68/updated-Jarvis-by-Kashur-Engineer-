@@ -1,14 +1,15 @@
 """
-core/gesture_tracker.py — JARVIS Hand Swipe & Gesture Engine
+core/gesture_tracker.py — JARVIS Hand Gesture, Finger Pointer & HUD Control Engine
 
-Dedicated hands-free camera gesture engine for HUD switching:
-1. **Swipe Left (`◀`)** -> Switches HUD to Ultron Arc Reactor Core.
-2. **Swipe Right (`▶`)** -> Switches HUD to 3D Holographic Face Avatar.
-3. **Swipe Up (`▲`)** -> Cycles HUD Theme Colors (JARVIS Cyan, Ultron Crimson, Mark LIV Gold, etc.).
-4. **Swipe Down (`▼`)** -> Toggles Quick Drawer & Panels.
-5. **Hand Pan / Hover** -> Tilts 3D Avatar gaze smoothly towards hand position.
-
-Fast, low-latency, and optimized for laptop webcams with MediaPipe Hands and OpenCV fallback.
+Features:
+1. **🖐️ Hand Swipe (`◀` / `▶` / `▲` / `▼`)**:
+   - Switches between the 2 HUD modes (JARVIS 3D Face Avatar vs Ultron Arc Reactor).
+2. **☝️ 1-Finger Point & Drag**:
+   - Move & drag floating news cards across the screen with your finger in real time.
+3. **✌️ 2-Fingers Gesture (Index + Middle extended)**:
+   - Opens / Expands the news card under the finger with holographic audio chime!
+4. **👀 Hand Pan / Hover**:
+   - Tilts 3D Avatar gaze towards hand position.
 """
 
 from __future__ import annotations
@@ -37,23 +38,28 @@ class GestureTracker:
         camera_index: int = 0,
         on_swipe: Optional[Callable[[str], None]] = None,
         on_pan: Optional[Callable[[float, float], None]] = None,
+        on_finger_pointer: Optional[Callable[[float, float, str], None]] = None,
         on_frame: Optional[Callable[[np.ndarray], None]] = None,
     ):
         self.camera_index = camera_index
-        self.on_swipe = on_swipe       # callback(direction: "left"|"right"|"up"|"down")
-        self.on_pan   = on_pan         # callback(dx: float, dy: float)
-        self.on_frame = on_frame       # callback(frame_bgr: np.ndarray)
+        self.on_swipe = on_swipe                 # callback(direction: "left"|"right"|"up"|"down")
+        self.on_pan   = on_pan                   # callback(dx: float, dy: float)
+        self.on_finger_pointer = on_finger_pointer # callback(norm_x: float, norm_y: float, action: "move"|"open_2finger"|"release")
+        self.on_frame = on_frame                 # callback(frame_bgr: np.ndarray)
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._cap: Optional[cv2.VideoCapture] = None
 
-        # Hand tracking & swipe velocity state
+        # Swipe tracking state
         self._last_x: Optional[float] = None
         self._last_y: Optional[float] = None
         self._last_pos_time: float = 0.0
         self._last_swipe_time: float = 0.0
-        self._swipe_cooldown: float = 0.35  # seconds between swipe triggers
+        self._swipe_cooldown: float = 0.40
+
+        # 2-finger open debounce
+        self._last_open_time: float = 0.0
 
     @property
     def is_running(self) -> bool:
@@ -109,12 +115,12 @@ class GestureTracker:
                 self._cap = None
             self._running = False
 
-    # ── MEDIAPIPE HIGH-PRECISION HAND SWIPE TRACKING ───────────────────────────
+    # ── MEDIAPIPE FINGER & SWIPE RECOGNITION ───────────────────────────────────
     def _mediapipe_loop(self) -> None:
         hands = _MP_HANDS.Hands(
             static_image_mode=False,
             max_num_hands=1,
-            min_detection_confidence=0.50,
+            min_detection_confidence=0.55,
             min_tracking_confidence=0.50,
         )
 
@@ -133,9 +139,45 @@ class GestureTracker:
                 now = time.time()
 
                 if results.multi_hand_landmarks:
-                    h = results.multi_hand_landmarks[0].landmark[9]  # Palm center
-                    curr_x, curr_y = h.x, h.y
+                    lms = results.multi_hand_landmarks[0].landmark
+                    palm = lms[9]  # Palm center
+                    curr_x, curr_y = palm.x, palm.y
 
+                    # Finger keypoints
+                    idx_tip = lms[8]
+                    idx_dip = lms[6]
+                    mid_tip = lms[12]
+                    mid_dip = lms[10]
+                    rng_tip = lms[16]
+                    rng_dip = lms[14]
+                    pnk_tip = lms[20]
+                    pnk_dip = lms[18]
+
+                    # Detect extended fingers (relative to DIP joints)
+                    idx_ext = idx_tip.y < idx_dip.y
+                    mid_ext = mid_tip.y < mid_dip.y
+                    rng_ext = rng_tip.y < rng_dip.y
+                    pnk_ext = pnk_tip.y < pnk_dip.y
+
+                    # 1. Check for 2-Fingers Extended (Index + Middle up, Ring + Pinky down) -> OPEN NEWS
+                    if idx_ext and mid_ext and not rng_ext and not pnk_ext:
+                        if now - self._last_open_time > 0.65:
+                            self._last_open_time = now
+                            if self.on_finger_pointer:
+                                try:
+                                    self.on_finger_pointer(idx_tip.x, idx_tip.y, "open_2finger")
+                                except Exception:
+                                    pass
+
+                    # 2. Check for 1-Finger Pointing (Index up, others folded) -> MOVE / DRAG NEWS
+                    elif idx_ext and not mid_ext and not rng_ext:
+                        if self.on_finger_pointer:
+                            try:
+                                self.on_finger_pointer(idx_tip.x, idx_tip.y, "move")
+                            except Exception:
+                                pass
+
+                    # 3. Whole hand lateral swipe velocity for HUD animation switching
                     if self._last_x is not None and self._last_y is not None:
                         dt = now - self._last_pos_time
                         if 0.015 < dt < 0.35:
@@ -144,9 +186,9 @@ class GestureTracker:
                             vel_x = dx / dt
                             vel_y = dy / dt
 
-                            # Swipe detection
+                            # Swipe threshold (fast hand displacement)
                             if now - self._last_swipe_time > self._swipe_cooldown:
-                                if abs(vel_x) > 1.2 and abs(vel_x) > abs(vel_y) * 1.2:
+                                if abs(vel_x) > 1.35 and abs(vel_x) > abs(vel_y) * 1.3:
                                     direction = "right" if vel_x > 0 else "left"
                                     self._last_swipe_time = now
                                     if self.on_swipe:
@@ -154,7 +196,7 @@ class GestureTracker:
                                             self.on_swipe(direction)
                                         except Exception:
                                             pass
-                                elif abs(vel_y) > 1.3 and abs(vel_y) > abs(vel_x) * 1.2:
+                                elif abs(vel_y) > 1.45 and abs(vel_y) > abs(vel_x) * 1.3:
                                     direction = "down" if vel_y > 0 else "up"
                                     self._last_swipe_time = now
                                     if self.on_swipe:
@@ -176,6 +218,12 @@ class GestureTracker:
                     self._last_y = curr_y
                     self._last_pos_time = now
                 else:
+                    if self._last_x is not None:
+                        if self.on_finger_pointer:
+                            try:
+                                self.on_finger_pointer(0.5, 0.5, "release")
+                            except Exception:
+                                pass
                     self._last_x = None
                     self._last_y = None
 
@@ -190,7 +238,7 @@ class GestureTracker:
         finally:
             hands.close()
 
-    # ── OPENCV CENTROID SWIPE TRACKING FALLBACK ────────────────────────────────
+    # ── OPENCV CENTROID TRACKING FALLBACK ──────────────────────────────────────
     def _opencv_fallback_loop(self) -> None:
         bg_sub = cv2.createBackgroundSubtractorMOG2(history=30, varThreshold=36, detectShadows=False)
 
@@ -221,6 +269,12 @@ class GestureTracker:
                     curr_x = (m["m10"] / m["m00"]) / w
                     curr_y = (m["m01"] / m["m00"]) / h
 
+                    if self.on_finger_pointer:
+                        try:
+                            self.on_finger_pointer(curr_x, curr_y, "move")
+                        except Exception:
+                            pass
+
                     if self._last_x is not None and self._last_y is not None:
                         dt = now - self._last_pos_time
                         if 0.015 < dt < 0.35:
@@ -230,7 +284,7 @@ class GestureTracker:
                             vel_y = dy / dt
 
                             if now - self._last_swipe_time > self._swipe_cooldown:
-                                if abs(vel_x) > 1.2 and abs(vel_x) > abs(vel_y) * 1.2:
+                                if abs(vel_x) > 1.35 and abs(vel_x) > abs(vel_y) * 1.3:
                                     direction = "right" if vel_x > 0 else "left"
                                     self._last_swipe_time = now
                                     if self.on_swipe:
@@ -238,7 +292,7 @@ class GestureTracker:
                                             self.on_swipe(direction)
                                         except Exception:
                                             pass
-                                elif abs(vel_y) > 1.3 and abs(vel_y) > abs(vel_x) * 1.2:
+                                elif abs(vel_y) > 1.45 and abs(vel_y) > abs(vel_x) * 1.3:
                                     direction = "down" if vel_y > 0 else "up"
                                     self._last_swipe_time = now
                                     if self.on_swipe:

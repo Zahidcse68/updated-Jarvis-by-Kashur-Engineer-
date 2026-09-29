@@ -485,6 +485,10 @@ class HudCanvas(QWidget):
         self.gesture_banner_text = ""
         self.gesture_banner_alpha = 0.0
 
+        # Finger Pointer Tracking State
+        self._finger_pos: tuple[float, float] | None = None
+        self._finger_action: str | None = None
+
         # Floating Holographic News & Intel Cards
         self.floating_news: list[dict] = []
         self._drag_card: dict | None = None
@@ -584,6 +588,73 @@ class HudCanvas(QWidget):
             self.update()
             return
         super().mouseReleaseEvent(event)
+
+    def on_camera_finger_pointer(self, norm_x: float, norm_y: float, action: str) -> None:
+        """
+        Handle camera fingertip pointer events:
+        - 'move' (1 finger pointing): Real-time drag/move floating news cards.
+        - 'open_2finger' (2 fingers ✌️): Opens & expands the targeted news card.
+        - 'release': Drops dragged card; deletes if dropped in trash zone.
+        """
+        W, H = max(400, self.width()), max(300, self.height())
+        px = max(0.0, min(float(W), float(norm_x * W)))
+        py = max(0.0, min(float(H), float(norm_y * H)))
+
+        if action == "release":
+            if self._drag_card:
+                card = self._drag_card
+                self._drag_card = None
+                if px >= W - 145 and py >= H - 65:
+                    if card in self.floating_news:
+                        self.floating_news.remove(card)
+                    _play_jarvis_hologram_sound()
+                    self.show_gesture_feedback("◈ DISPOSED IN TRASH 🗑️")
+                self._over_trash = False
+            self._finger_pos = None
+            self._finger_action = None
+            self.update()
+            return
+
+        self._finger_pos = (px, py)
+        self._finger_action = action
+
+        if action == "open_2finger":
+            # 2-Finger Open Gesture ✌️
+            matched_card = None
+            for card in reversed(self.floating_news):
+                rx, ry, rw, rh = card['x'], card['y'], card['w'], card['h']
+                if rx - 25 <= px <= rx + rw + 25 and ry - 25 <= py <= ry + rh + 25:
+                    matched_card = card
+                    break
+            if matched_card is None and self.floating_news:
+                # Find nearest card within reasonable threshold
+                nearest = min(self.floating_news, key=lambda c: math.hypot(px - (c['x'] + c['w'] / 2.0), py - (c['y'] + c['h'] / 2.0)))
+                if math.hypot(px - (nearest['x'] + nearest['w'] / 2.0), py - (nearest['y'] + nearest['h'] / 2.0)) < 180.0:
+                    matched_card = nearest
+
+            if matched_card:
+                _play_jarvis_hologram_sound()
+                self.show_gesture_feedback(f"◈ 2-FINGER OPEN: {matched_card['title'][:16]} ✌️")
+                self.glance(0.0, -0.6, hold=1.0)
+                if callable(getattr(self, 'on_card_click', None)):
+                    self.on_card_click(matched_card)
+
+        elif action == "move":
+            # 1-Finger Point & Drag
+            if not self._drag_card:
+                for card in reversed(self.floating_news):
+                    rx, ry, rw, rh = card['x'], card['y'], card['w'], card['h']
+                    if rx - 15 <= px <= rx + rw + 15 and ry - 15 <= py <= ry + rh + 15:
+                        self._drag_card = card
+                        self._drag_offset = (px - rx, py - ry)
+                        self._over_trash = False
+                        break
+            if self._drag_card:
+                self._drag_card['x'] = max(4.0, min(W - self._drag_card['w'] - 4.0, px - self._drag_offset[0]))
+                self._drag_card['y'] = max(4.0, min(H - self._drag_card['h'] - 4.0, py - self._drag_offset[1]))
+                self._over_trash = (px >= W - 145 and py >= H - 65)
+
+        self.update()
 
     def set_gesture_scale(self, scale: float) -> None:
         """Dynamically zoom the 3D Hologram / Arc Reactor with 2-hand gesture."""
@@ -1095,6 +1166,26 @@ class HudCanvas(QWidget):
             p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
             p.setPen(QPen(qcol(C.WHITE if self._over_trash else C.TEXT_DIM, 255), 1))
             p.drawText(trash_rect, Qt.AlignmentFlag.AlignCenter, "🗑️ DROP TO DELETE" if self._over_trash else "🗑️ TRASH ZONE")
+            p.restore()
+
+        # ── Holographic Fingertip Cursor Reticle ──
+        if getattr(self, '_finger_pos', None) is not None:
+            fx, fy = self._finger_pos
+            p.save()
+            is_2f = (getattr(self, '_finger_action', None) == "open_2finger")
+            cur_col = qcol("#00ff88" if is_2f else "#00d4ff")
+            p.setPen(QPen(cur_col, 1.8))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(fx, fy), 14, 14)
+            p.drawEllipse(QPointF(fx, fy), 5, 5)
+            p.drawLine(QLineF(fx - 22, fy, fx - 8, fy))
+            p.drawLine(QLineF(fx + 8, fy, fx + 22, fy))
+            p.drawLine(QLineF(fx, fy - 22, fx, fy - 8))
+            p.drawLine(QLineF(fx, fy + 8, fx, fy + 22))
+            p.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            p.setPen(QPen(cur_col, 1))
+            lbl = "✌️ 2-FINGER OPEN" if is_2f else "☝️ 1-FINGER DRAG"
+            p.drawText(QRectF(fx + 16, fy - 8, 130, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, lbl)
             p.restore()
 
 
@@ -3347,6 +3438,8 @@ class MainWindow(QMainWindow):
     _gesture_swipe_sig = pyqtSignal(str)       # "left" | "right" | "up" | "down"
     _gesture_zoom_sig  = pyqtSignal(float)     # scale factor from 2-hand gesture
     _gesture_pan_sig   = pyqtSignal(float, float) # (dx, dy) avatar look pan
+    _finger_pointer_sig = pyqtSignal(float, float, str) # (norm_x, norm_y, action: "move"|"open_2finger"|"release")
+
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -3510,6 +3603,7 @@ class MainWindow(QMainWindow):
         self._gesture_swipe_sig.connect(self._on_gesture_swipe)
         self._gesture_zoom_sig.connect(self._on_gesture_zoom)
         self._gesture_pan_sig.connect(self._on_gesture_pan)
+        self._finger_pointer_sig.connect(self.hud.on_camera_finger_pointer)
         self._gesture_tracker = None
         self._cam_stop = threading.Event()
 
@@ -4483,10 +4577,11 @@ class MainWindow(QMainWindow):
                 camera_index=cam_idx,
                 on_swipe=lambda d: self._gesture_swipe_sig.emit(d),
                 on_pan=lambda dx, dy: self._gesture_pan_sig.emit(dx, dy),
+                on_finger_pointer=lambda x, y, act: self._finger_pointer_sig.emit(x, y, act),
             )
             if self._gesture_tracker.start():
-                self.hud.show_gesture_feedback("◈ HAND SWIPE ACTIVE")
-                self._log.append_log("SYS: Hand Swipe Gesture Control activated (Swipe Left/Right to change HUD).")
+                self.hud.show_gesture_feedback("◈ HAND SWIPE & FINGER CONTROL ACTIVE")
+                self._log.append_log("SYS: Gesture & Finger Control activated (1-Finger: Drag News | 2-Finger: Open News | Hand Swipe: Switch HUD).")
                 if hasattr(self, '_gesture_btn'):
                     self._gesture_btn.setChecked(True)
             else:
