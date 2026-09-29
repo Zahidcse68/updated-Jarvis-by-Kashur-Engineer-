@@ -219,6 +219,40 @@ def _play_jarvis_hologram_sound():
     threading.Thread(target=_synth, daemon=True, name="jarvis-holo-sound").start()
 
 
+def _play_jarvis_transition_sound():
+    """Synthesize and play an epic JARVIS holographic fullscreen transition sweep & chime."""
+    def _synth():
+        try:
+            if _OS == "Windows":
+                import winsound
+                import struct
+                import math
+                sr = 22050
+                duration = 0.36
+                n_samples = int(sr * duration)
+                data = bytearray()
+                for i in range(n_samples):
+                    t = i / sr
+                    # Ascending sci-fi power chord transition
+                    f1 = 440 + 880 * math.sqrt(t / duration)
+                    f2 = 880 + 1320 * (t / duration) ** 1.3
+                    f3 = 1760 + 440 * math.sin(t * 30.0)
+                    env = (1.0 - (t / duration) ** 1.4) * min(1.0, t / 0.008)
+                    val = 0.40 * math.sin(2 * math.pi * f1 * t) + 0.35 * math.sin(2 * math.pi * f2 * t) + 0.25 * math.sin(2 * math.pi * f3 * t)
+                    sample = int(max(-32767, min(32767, val * env * 24000)))
+                    data.extend(struct.pack('<h', sample))
+                header = struct.pack(
+                    '<4sI4s4sIHHIIHH4sI',
+                    b'RIFF', 36 + len(data), b'WAVE',
+                    b'fmt ', 16, 1, 1, sr, sr * 2, 2, 16,
+                    b'data', len(data)
+                )
+                winsound.PlaySound(header + bytes(data), winsound.SND_MEMORY | winsound.SND_ASYNC)
+        except Exception:
+            pass
+    threading.Thread(target=_synth, daemon=True, name="jarvis-trans-sound").start()
+
+
 
 # ── Windows GPU via NVML DLL (no subprocess, no console window) ──────────────
 _nvml_lib: object = None   # cached ctypes DLL
@@ -494,8 +528,12 @@ class HudCanvas(QWidget):
         self._drag_card: dict | None = None
         self._drag_offset: tuple[float, float] = (0.0, 0.0)
         self._drag_start_pos: tuple[float, float] | None = None
+        self._target_drag_x: float = 0.0
+        self._target_drag_y: float = 0.0
+        self._over_open: bool = False
         self._over_trash: bool = False
         self.on_card_click = None
+        self.on_card_open_fullscreen = None
 
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
@@ -546,6 +584,9 @@ class HudCanvas(QWidget):
                 self._drag_card = card
                 self._drag_start_pos = (px, py)
                 self._drag_offset = (px - rx, py - ry)
+                self._target_drag_x = card['x']
+                self._target_drag_y = card['y']
+                self._over_open = False
                 self._over_trash = False
                 self.update()
                 return
@@ -556,8 +597,9 @@ class HudCanvas(QWidget):
         px, py = pos.x(), pos.y()
         if self._drag_card:
             W, H = self.width(), self.height()
-            self._drag_card['x'] = max(4.0, min(W - self._drag_card['w'] - 4.0, px - self._drag_offset[0]))
-            self._drag_card['y'] = max(4.0, min(H - self._drag_card['h'] - 4.0, py - self._drag_offset[1]))
+            self._target_drag_x = max(4.0, min(W - self._drag_card['w'] - 4.0, px - self._drag_offset[0]))
+            self._target_drag_y = max(4.0, min(H - self._drag_card['h'] - 4.0, py - self._drag_offset[1]))
+            self._over_open = (px <= 165 and py >= H - 65)
             self._over_trash = (px >= W - 145 and py >= H - 65)
             self.update()
             return
@@ -570,14 +612,25 @@ class HudCanvas(QWidget):
             card = self._drag_card
             self._drag_card = None
             W, H = self.width(), self.height()
-            if px >= W - 145 and py >= H - 65:
+            if px <= 165 and py >= H - 65:
+                _play_jarvis_transition_sound()
+                self.show_gesture_feedback("◈ EXPANDED FULLSCREEN 📂")
+                if callable(getattr(self, 'on_card_open_fullscreen', None)):
+                    self.on_card_open_fullscreen(card)
+                self._over_open = False
+                self._over_trash = False
+                self.update()
+                return
+            elif px >= W - 145 and py >= H - 65:
                 if card in self.floating_news:
                     self.floating_news.remove(card)
                 _play_jarvis_hologram_sound()
                 self.show_gesture_feedback("◈ DISPOSED IN TRASH 🗑️")
+                self._over_open = False
                 self._over_trash = False
                 self.update()
                 return
+            self._over_open = False
             self._over_trash = False
             if self._drag_start_pos:
                 dist = math.hypot(px - self._drag_start_pos[0], py - self._drag_start_pos[1])
@@ -592,9 +645,10 @@ class HudCanvas(QWidget):
     def on_camera_finger_pointer(self, norm_x: float, norm_y: float, action: str) -> None:
         """
         Handle camera fingertip pointer events:
-        - 'move' (1 finger pointing): Real-time drag/move floating news cards.
+        - 'pick' (Index + Last Finger Pinky 🤘): Smoothly grab & drag floating news cards.
+        - 'move' (1 finger pointing ☝️): Smoothly drag floating news cards.
         - 'open_2finger' (2 fingers ✌️): Opens & expands the targeted news card.
-        - 'release': Drops dragged card; deletes if dropped in trash zone.
+        - 'release': Drops dragged card; expands if over OPEN ZONE, deletes if in TRASH ZONE.
         """
         W, H = max(400, self.width()), max(300, self.height())
         px = max(0.0, min(float(W), float(norm_x * W)))
@@ -604,11 +658,17 @@ class HudCanvas(QWidget):
             if self._drag_card:
                 card = self._drag_card
                 self._drag_card = None
-                if px >= W - 145 and py >= H - 65:
+                if px <= 165 and py >= H - 65:
+                    _play_jarvis_transition_sound()
+                    self.show_gesture_feedback("◈ EXPANDED FULLSCREEN 📂")
+                    if callable(getattr(self, 'on_card_open_fullscreen', None)):
+                        self.on_card_open_fullscreen(card)
+                elif px >= W - 145 and py >= H - 65:
                     if card in self.floating_news:
                         self.floating_news.remove(card)
                     _play_jarvis_hologram_sound()
                     self.show_gesture_feedback("◈ DISPOSED IN TRASH 🗑️")
+                self._over_open = False
                 self._over_trash = False
             self._finger_pos = None
             self._finger_action = None
@@ -627,31 +687,36 @@ class HudCanvas(QWidget):
                     matched_card = card
                     break
             if matched_card is None and self.floating_news:
-                # Find nearest card within reasonable threshold
                 nearest = min(self.floating_news, key=lambda c: math.hypot(px - (c['x'] + c['w'] / 2.0), py - (c['y'] + c['h'] / 2.0)))
                 if math.hypot(px - (nearest['x'] + nearest['w'] / 2.0), py - (nearest['y'] + nearest['h'] / 2.0)) < 180.0:
                     matched_card = nearest
 
             if matched_card:
-                _play_jarvis_hologram_sound()
+                _play_jarvis_transition_sound()
                 self.show_gesture_feedback(f"◈ 2-FINGER OPEN: {matched_card['title'][:16]} ✌️")
                 self.glance(0.0, -0.6, hold=1.0)
-                if callable(getattr(self, 'on_card_click', None)):
+                if callable(getattr(self, 'on_card_open_fullscreen', None)):
+                    self.on_card_open_fullscreen(matched_card)
+                elif callable(getattr(self, 'on_card_click', None)):
                     self.on_card_click(matched_card)
 
-        elif action == "move":
-            # 1-Finger Point & Drag
+        elif action in ("pick", "move"):
+            # Index + Last Finger Pick 🤘 or 1-Finger Drag ☝️ (Smooth LERP Target)
             if not self._drag_card:
                 for card in reversed(self.floating_news):
                     rx, ry, rw, rh = card['x'], card['y'], card['w'], card['h']
-                    if rx - 15 <= px <= rx + rw + 15 and ry - 15 <= py <= ry + rh + 15:
+                    if rx - 20 <= px <= rx + rw + 20 and ry - 20 <= py <= ry + rh + 20:
                         self._drag_card = card
                         self._drag_offset = (px - rx, py - ry)
+                        self._target_drag_x = card['x']
+                        self._target_drag_y = card['y']
+                        self._over_open = False
                         self._over_trash = False
                         break
             if self._drag_card:
-                self._drag_card['x'] = max(4.0, min(W - self._drag_card['w'] - 4.0, px - self._drag_offset[0]))
-                self._drag_card['y'] = max(4.0, min(H - self._drag_card['h'] - 4.0, py - self._drag_offset[1]))
+                self._target_drag_x = max(4.0, min(W - self._drag_card['w'] - 4.0, px - self._drag_offset[0]))
+                self._target_drag_y = max(4.0, min(H - self._drag_card['h'] - 4.0, py - self._drag_offset[1]))
+                self._over_open = (px <= 165 and py >= H - 65)
                 self._over_trash = (px >= W - 145 and py >= H - 65)
 
         self.update()
@@ -800,6 +865,11 @@ class HudCanvas(QWidget):
         # uses — one audio source, so the mouth can never drift out of sync.
         dt = now - self._step_t
         self._step_t = now
+
+        # Smooth LERP interpolation for dragged news card
+        if self._drag_card:
+            self._drag_card['x'] += (self._target_drag_x - self._drag_card['x']) * 0.40
+            self._drag_card['y'] += (self._target_drag_y - self._drag_card['y']) * 0.40
         # Integrated, not derived from absolute time: multiplying wall-clock by
         # a rate that changes with state jumps the rings the instant JARVIS
         # starts talking. Same lesson the head's sway taught.
@@ -1156,7 +1226,18 @@ class HudCanvas(QWidget):
                 p.setPen(QPen(qcol(C.PRI, 200), 1))
                 p.drawText(QRectF(cx_c + 7, cy_c + ch_c - 15, cw_c - 14, 11), Qt.AlignmentFlag.AlignLeft, "CLICK ↗ | DRAG ✢")
 
-            # ── Draw Dustbin / Trash Can Zone ──
+            # ── Draw OPEN OPTION Zone (Bottom-Left) ──
+            open_rect = QRectF(16, H - 56, 140, 38)
+            p.setBrush(QBrush(qcol(C.PRI if self._over_open else C.PANEL2, 160 if not self._over_open else 235)))
+            p.setPen(QPen(qcol(C.PRI if self._over_open else C.BORDER_B, 255 if self._over_open else 180),
+                          2.0 if self._over_open else 1.2,
+                          Qt.PenStyle.SolidLine if self._over_open else Qt.PenStyle.DashLine))
+            p.drawRoundedRect(open_rect, 6, 6)
+            p.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+            p.setPen(QPen(qcol(C.WHITE if self._over_open else C.PRI_DIM, 255), 1))
+            p.drawText(open_rect, Qt.AlignmentFlag.AlignCenter, "📂 DROP TO EXPAND" if self._over_open else "📂 OPEN FULLSCREEN")
+
+            # ── Draw Dustbin / Trash Can Zone (Bottom-Right) ──
             trash_rect = QRectF(W - 135, H - 56, 122, 38)
             p.setBrush(QBrush(qcol(C.RED if self._over_trash else C.PANEL2, 160 if not self._over_trash else 230)))
             p.setPen(QPen(qcol(C.RED if self._over_trash else C.BORDER_B, 255 if self._over_trash else 180),
@@ -1172,8 +1253,19 @@ class HudCanvas(QWidget):
         if getattr(self, '_finger_pos', None) is not None:
             fx, fy = self._finger_pos
             p.save()
-            is_2f = (getattr(self, '_finger_action', None) == "open_2finger")
-            cur_col = qcol("#00ff88" if is_2f else "#00d4ff")
+            act = getattr(self, '_finger_action', None)
+            is_2f = (act == "open_2finger")
+            is_pick = (act == "pick")
+            if is_2f:
+                cur_col = qcol("#00ff88")
+                lbl = "✌️ 2-FINGER OPEN"
+            elif is_pick:
+                cur_col = qcol("#38bdf8")
+                lbl = "🤘 INDEX+PINKY PICK"
+            else:
+                cur_col = qcol("#00d4ff")
+                lbl = "☝️ 1-FINGER DRAG"
+
             p.setPen(QPen(cur_col, 1.8))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QPointF(fx, fy), 14, 14)
@@ -1184,8 +1276,7 @@ class HudCanvas(QWidget):
             p.drawLine(QLineF(fx, fy + 8, fx, fy + 22))
             p.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
             p.setPen(QPen(cur_col, 1))
-            lbl = "✌️ 2-FINGER OPEN" if is_2f else "☝️ 1-FINGER DRAG"
-            p.drawText(QRectF(fx + 16, fy - 8, 130, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, lbl)
+            p.drawText(QRectF(fx + 16, fy - 8, 140, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, lbl)
             p.restore()
 
 
@@ -3420,6 +3511,147 @@ class RemoteKeyOverlay(QWidget):
         self.closed.emit()
 
 
+class FullscreenNewsModal(QWidget):
+    """
+    Stunning Fullscreen JARVIS Holographic Intelligence Overlay.
+    Provides glassmorphic backdrop, glowing neon cybernetic borders, 
+    large title, full formatted story text, inside navigation arrows, and close button.
+    """
+    closed = pyqtSignal()
+    prev_requested = pyqtSignal()
+    next_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            FullscreenNewsModal {{
+                background: rgba(0, 8, 14, 0.96);
+                border: 2px solid {C.PRI};
+                border-radius: 8px;
+            }}
+        """)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 14, 18, 14)
+        lay.setSpacing(10)
+
+        # Header bar
+        hdr = QHBoxLayout()
+        icon = QLabel("◈")
+        icon.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+        icon.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(icon)
+
+        title_badge = QLabel("J.A.R.V.I.S INTELLIGENCE ARCHIVE — FULLSCREEN INTEL")
+        title_badge.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        title_badge.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 2px;")
+        hdr.addWidget(title_badge)
+        hdr.addStretch()
+
+        self._counter_lbl = QLabel("[ 1 / 1 ]")
+        self._counter_lbl.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        self._counter_lbl.setStyleSheet(f"color: {C.ACC2}; background: transparent;")
+        hdr.addWidget(self._counter_lbl)
+
+        hdr.addSpacing(10)
+        close_btn = QPushButton("✕  CLOSE (ESC)")
+        close_btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 51, 85, 0.15); color: {C.RED};
+                border: 1px solid {C.RED}; border-radius: 4px; padding: 4px 10px;
+            }}
+            QPushButton:hover {{
+                background: {C.RED}; color: #ffffff;
+            }}
+        """)
+        close_btn.clicked.connect(self.hide_modal)
+        hdr.addWidget(close_btn)
+        lay.addLayout(hdr)
+
+        # Main Article Title
+        self._title_lbl = QLabel("")
+        self._title_lbl.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet(f"color: {C.WHITE}; background: transparent; padding: 4px 0;")
+        self._title_lbl.setWordWrap(True)
+        lay.addWidget(self._title_lbl)
+
+        # Body row with inside navigation arrows
+        body_row = QHBoxLayout()
+        body_row.setSpacing(10)
+
+        prev_btn = QPushButton("◀\n\nP\nR\nE\nV")
+        prev_btn.setFixedWidth(38)
+        prev_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        prev_btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        prev_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 19, 30, 0.85); color: {C.PRI};
+                border: 1px solid {C.BORDER_B}; border-radius: 5px;
+            }}
+            QPushButton:hover {{
+                background: {C.PRI_GHO}; color: {C.WHITE}; border-color: {C.PRI};
+            }}
+        """)
+        prev_btn.clicked.connect(self.prev_requested.emit)
+        body_row.addWidget(prev_btn)
+
+        self._text_edit = QTextEdit()
+        self._text_edit.setReadOnly(True)
+        self._text_edit.setFont(QFont("Segoe UI", 11))
+        self._text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background: rgba(0, 10, 18, 0.80);
+                color: {C.TEXT};
+                border: 1px solid {C.BORDER};
+                border-radius: 6px;
+                padding: 14px 18px;
+                line-height: 1.6;
+            }}
+            QScrollBar:vertical {{
+                background: {C.BG}; width: 8px; border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {C.BORDER_B}; border-radius: 4px; min-height: 24px;
+            }}
+        """)
+        body_row.addWidget(self._text_edit)
+
+        next_btn = QPushButton("▶\n\nN\nE\nX\nT")
+        next_btn.setFixedWidth(38)
+        next_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        next_btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        next_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 19, 30, 0.85); color: {C.PRI};
+                border: 1px solid {C.BORDER_B}; border-radius: 5px;
+            }}
+            QPushButton:hover {{
+                background: {C.PRI_GHO}; color: {C.WHITE}; border-color: {C.PRI};
+            }}
+        """)
+        next_btn.clicked.connect(self.next_requested.emit)
+        body_row.addWidget(next_btn)
+
+        lay.addLayout(body_row)
+        self.hide()
+
+    def show_article(self, title: str, body: str, index: int = 1, total: int = 1):
+        self._title_lbl.setText(title)
+        self._text_edit.setPlainText(body)
+        self._text_edit.moveCursor(self._text_edit.textCursor().MoveOperation.Start)
+        self._counter_lbl.setText(f"[ {index} / {total} ]")
+        self.show()
+        self.raise_()
+
+    def hide_modal(self):
+        self.hide()
+        self.closed.emit()
+
+
 class MainWindow(QMainWindow):
     _log_sig        = pyqtSignal(str)
     _state_sig      = pyqtSignal(str)
@@ -3607,6 +3839,11 @@ class MainWindow(QMainWindow):
         self._gesture_tracker = None
         self._cam_stop = threading.Event()
 
+        self._fullscreen_news_modal = FullscreenNewsModal(self.centralWidget())
+        self._fullscreen_news_modal.prev_requested.connect(self._prev_fullscreen_news)
+        self._fullscreen_news_modal.next_requested.connect(self._next_fullscreen_news)
+        self.hud.on_card_open_fullscreen = self._open_fullscreen_news
+
         # Camera preview overlay (child of central widget, positioned in resizeEvent)
         self._cam_preview = _CameraPreview(self.centralWidget())
 
@@ -3625,7 +3862,7 @@ class MainWindow(QMainWindow):
         sc_full = QShortcut(QKeySequence("F11"), self)
         sc_full.activated.connect(self._toggle_fullscreen)
         sc_intr = QShortcut(QKeySequence("Escape"), self)
-        sc_intr.activated.connect(self._do_interrupt)
+        sc_intr.activated.connect(self._on_escape_pressed)
 
     def _show_camera_frame(self, img_bytes: bytes):
         """Slot — display camera preview overlay (main thread)."""
@@ -4085,7 +4322,12 @@ class MainWindow(QMainWindow):
             cw.height() - ph - 28,
             pw, ph,
         )
-        # Clipboard panel — bottom-center
+        if hasattr(self, '_fullscreen_news_modal') and self._fullscreen_news_modal.isVisible():
+            self._fullscreen_news_modal.setGeometry(
+                12, 12,
+                cw.width() - 24,
+                cw.height() - 24,
+            )
         if hasattr(self, '_clipboard_panel') and self._clipboard_panel.isVisible():
             self._position_clipboard_panel()
         # Quick drawer — reposition if open
@@ -4905,6 +5147,51 @@ class MainWindow(QMainWindow):
             _play_jarvis_hologram_sound()
             self.hud.show_gesture_feedback(f"◈ NEWS [{self._current_news_idx + 1}/{len(self._news_items)}] ◀")
             self.hud.glance(-1.0, -0.4, hold=0.5)
+
+    def _on_escape_pressed(self):
+        if hasattr(self, '_fullscreen_news_modal') and self._fullscreen_news_modal.isVisible():
+            self._fullscreen_news_modal.hide_modal()
+            return
+        if hasattr(self, '_content_panel') and self._content_panel.isVisible():
+            self._close_content_panel()
+            return
+        self._do_interrupt()
+
+    def _open_fullscreen_news(self, card: dict):
+        title = card.get("title", "INTELLIGENCE BRIEFING")
+        body = card.get("body", "")
+        idx = 1
+        total = 1
+        if hasattr(self, '_news_items') and self._news_items:
+            total = len(self._news_items)
+            for i, it in enumerate(self._news_items):
+                if title.lower() in it.lower() or it.lower() in title.lower():
+                    idx = i + 1
+                    break
+        cw = self.centralWidget()
+        self._fullscreen_news_modal.setGeometry(12, 12, cw.width() - 24, cw.height() - 24)
+        self._fullscreen_news_modal.show_article(title, body, idx, total)
+        self.hud.glance(0.0, -0.6, hold=1.2)
+
+    def _next_fullscreen_news(self):
+        if hasattr(self, '_news_items') and len(self._news_items) > 1:
+            self._current_news_idx = (self._current_news_idx + 1) % len(self._news_items)
+            self._update_news_card()
+            item_text = self._news_items[self._current_news_idx]
+            lines = [l.strip(" #*-•") for l in item_text.splitlines() if l.strip()]
+            t = lines[0] if lines else f"News #{self._current_news_idx+1}"
+            self._fullscreen_news_modal.show_article(t, item_text, self._current_news_idx + 1, len(self._news_items))
+            _play_jarvis_transition_sound()
+
+    def _prev_fullscreen_news(self):
+        if hasattr(self, '_news_items') and len(self._news_items) > 1:
+            self._current_news_idx = (self._current_news_idx - 1) % len(self._news_items)
+            self._update_news_card()
+            item_text = self._news_items[self._current_news_idx]
+            lines = [l.strip(" #*-•") for l in item_text.splitlines() if l.strip()]
+            t = lines[0] if lines else f"News #{self._current_news_idx+1}"
+            self._fullscreen_news_modal.show_article(t, item_text, self._current_news_idx + 1, len(self._news_items))
+            _play_jarvis_transition_sound()
 
     def _close_content_panel(self):
         if hasattr(self, '_content_panel'):

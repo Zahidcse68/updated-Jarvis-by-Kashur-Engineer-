@@ -61,6 +61,10 @@ class GestureTracker:
         # 2-finger open debounce
         self._last_open_time: float = 0.0
 
+        # Smoothed pointer coordinates
+        self._smooth_px: Optional[float] = None
+        self._smooth_py: Optional[float] = None
+
     @property
     def is_running(self) -> bool:
         return self._running
@@ -159,12 +163,29 @@ class GestureTracker:
                     rng_ext = rng_tip.y < rng_dip.y
                     pnk_ext = pnk_tip.y < pnk_dip.y
 
-                    is_full_hand = idx_ext and mid_ext and rng_ext and pnk_ext
-                    is_2finger   = idx_ext and mid_ext and not rng_ext and not pnk_ext
-                    is_1finger   = idx_ext and not mid_ext and not rng_ext
+                    is_full_hand   = idx_ext and mid_ext and rng_ext and pnk_ext
+                    is_index_pinky = idx_ext and pnk_ext and not mid_ext and not rng_ext  # 🤘 Pick news with Index + Last Finger
+                    is_2finger     = idx_ext and mid_ext and not rng_ext and not pnk_ext  # ✌️ 2-finger open
+                    is_1finger     = idx_ext and not mid_ext and not rng_ext and not pnk_ext # ☝️ 1-finger point
 
-                    # 1. Check for 2-Fingers Extended (Index + Middle up, Ring + Pinky down) -> OPEN NEWS
-                    if is_2finger:
+                    # 1. Check for Index Finger + Last Finger (Pinky 🤘) -> PICK / GRAB & MOVE NEWS
+                    if is_index_pinky:
+                        raw_px = (idx_tip.x + pnk_tip.x) / 2.0
+                        raw_py = (idx_tip.y + pnk_tip.y) / 2.0
+                        if self._smooth_px is None:
+                            self._smooth_px, self._smooth_py = raw_px, raw_py
+                        else:
+                            self._smooth_px += (raw_px - self._smooth_px) * 0.45
+                            self._smooth_py += (raw_py - self._smooth_py) * 0.45
+
+                        if self.on_finger_pointer:
+                            try:
+                                self.on_finger_pointer(self._smooth_px, self._smooth_py, "pick")
+                            except Exception:
+                                pass
+
+                    # 2. Check for 2-Fingers Extended (Index + Middle ✌️) -> OPEN NEWS
+                    elif is_2finger:
                         if now - self._last_open_time > 0.65:
                             self._last_open_time = now
                             if self.on_finger_pointer:
@@ -173,16 +194,25 @@ class GestureTracker:
                                 except Exception:
                                     pass
 
-                    # 2. Check for 1-Finger Pointing (Index up, others folded) -> MOVE / DRAG NEWS
+                    # 3. Check for 1-Finger Pointing (Index ☝️) -> MOVE / DRAG NEWS
                     elif is_1finger:
+                        raw_px, raw_py = idx_tip.x, idx_tip.y
+                        if self._smooth_px is None:
+                            self._smooth_px, self._smooth_py = raw_px, raw_py
+                        else:
+                            self._smooth_px += (raw_px - self._smooth_px) * 0.45
+                            self._smooth_py += (raw_py - self._smooth_py) * 0.45
+
                         if self.on_finger_pointer:
                             try:
-                                self.on_finger_pointer(idx_tip.x, idx_tip.y, "move")
+                                self.on_finger_pointer(self._smooth_px, self._smooth_py, "move")
                             except Exception:
                                 pass
 
-                    # 3. FULL HAND SWIPE ONLY: When all fingers are open (🖐️ full palm), fast swipe switches HUD
+                    # 4. FULL HAND SWIPE ONLY: When all fingers are open (🖐️ full palm), fast swipe switches HUD
                     elif is_full_hand:
+                        self._smooth_px = None
+                        self._smooth_py = None
                         if self._last_x is not None and self._last_y is not None:
                             dt = now - self._last_pos_time
                             if 0.015 < dt < 0.35:
@@ -211,7 +241,7 @@ class GestureTracker:
                                                 pass
 
                     # Smooth avatar glance pan
-                    if self.on_pan:
+                    if self.on_pan and (is_full_hand or is_index_pinky or is_1finger):
                         try:
                             pan_x = (curr_x - 0.5) * 2.0
                             pan_y = (curr_y - 0.5) * 2.0
@@ -223,6 +253,8 @@ class GestureTracker:
                     self._last_y = curr_y
                     self._last_pos_time = now
                 else:
+                    self._smooth_px = None
+                    self._smooth_py = None
                     if self._last_x is not None:
                         if self.on_finger_pointer:
                             try:
