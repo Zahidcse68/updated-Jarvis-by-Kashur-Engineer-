@@ -393,6 +393,28 @@ TOOL_DECLARATIONS = [
         },
     },
     {
+        "name": "manage_news",
+        "description": (
+            "Control on-screen holographic news widgets and fullscreen reading modal. "
+            "Call this when the user asks to close news, close all news, dismiss news, "
+            "or open any news in fullscreen / expand news."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "description": "Action to perform: 'close_all' to close/dismiss all news widgets, or 'open_fullscreen' to open/expand news in full screen.",
+                },
+                "index": {
+                    "type": "INTEGER",
+                    "description": "Optional news index to open in fullscreen (1-based), default 1.",
+                }
+            },
+            "required": ["action"],
+        }
+    },
+    {
         "name": "shutdown_jarvis",
         "description": (
             "Shuts down the assistant completely. "
@@ -856,6 +878,13 @@ class JarvisLive:
         if self._wake_enabled and not self._awake:
             self.ui.write_log("SYS: I'm asleep — say 'Hey Jarvis' or tap WAKE NOW first.")
             return
+
+        low = (text or "").lower().strip()
+        if any(p in low for p in ("close all news", "close news", "clear all news", "clear news", "dismiss news", "band karo news")):
+            self.ui.close_all_news()
+        elif any(p in low for p in ("open any news", "open news in full screen", "open news", "expand news", "fullscreen news")):
+            self.ui.open_news_fullscreen(0)
+
         asyncio.run_coroutine_threadsafe(
             self.session.send_client_content(
                 turns={"role": "user", "parts": [{"text": text}]},
@@ -1227,6 +1256,19 @@ class JarvisLive:
                     result = ("Monitoring: " + ", ".join(topics)) if topics else "No topics are being monitored."
                 else:
                     result = "Specify action (add/remove/list) and a topic."
+
+            elif name == "manage_news":
+                action = str(args.get("action", "close_all")).lower().strip()
+                if "close" in action or "dismiss" in action or "clear" in action:
+                    self.ui.close_all_news()
+                    result = "All news widgets have been closed and dismissed from the screen, Sir."
+                elif "open" in action or "fullscreen" in action or "expand" in action:
+                    idx = int(args.get("index", 1)) - 1
+                    ok = self.ui.open_news_fullscreen(idx)
+                    result = "Opening the news story in full screen, Sir." if ok else "No news stories currently available on screen."
+                else:
+                    self.ui.close_all_news()
+                    result = "News command executed."
 
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")

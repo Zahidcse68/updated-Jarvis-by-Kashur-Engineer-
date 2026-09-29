@@ -1221,11 +1221,6 @@ class HudCanvas(QWidget):
                 elided = fm.elidedText(card['title'], Qt.TextElideMode.ElideRight, int(cw_c - 14))
                 p.drawText(QRectF(cx_c + 7, cy_c + 18, cw_c - 14, 34), Qt.TextFlag.TextWordWrap, elided)
 
-                # Action hint
-                p.setFont(QFont("Courier New", 7))
-                p.setPen(QPen(qcol(C.PRI, 200), 1))
-                p.drawText(QRectF(cx_c + 7, cy_c + ch_c - 15, cw_c - 14, 11), Qt.AlignmentFlag.AlignLeft, "CLICK ↗ | DRAG ✢")
-
             # ── Draw OPEN OPTION Zone (Bottom-Left) ──
             open_rect = QRectF(16, H - 56, 140, 38)
             p.setBrush(QBrush(qcol(C.PRI if self._over_open else C.PANEL2, 160 if not self._over_open else 235)))
@@ -1261,7 +1256,7 @@ class HudCanvas(QWidget):
                 lbl = "✌️ 2-FINGER OPEN"
             elif is_pick:
                 cur_col = qcol("#38bdf8")
-                lbl = "🤘 INDEX+PINKY PICK"
+                lbl = "🤏 PINCH & DRAG"
             else:
                 cur_col = qcol("#00d4ff")
                 lbl = "☝️ 1-FINGER DRAG"
@@ -3671,6 +3666,7 @@ class MainWindow(QMainWindow):
     _gesture_zoom_sig  = pyqtSignal(float)     # scale factor from 2-hand gesture
     _gesture_pan_sig   = pyqtSignal(float, float) # (dx, dy) avatar look pan
     _finger_pointer_sig = pyqtSignal(float, float, str) # (norm_x, norm_y, action: "move"|"open_2finger"|"release")
+    _news_cmd_sig       = pyqtSignal(str, int)          # ("close"|"open", index)
 
 
     def __init__(self, face_path: str):
@@ -3843,6 +3839,7 @@ class MainWindow(QMainWindow):
         self._fullscreen_news_modal.prev_requested.connect(self._prev_fullscreen_news)
         self._fullscreen_news_modal.next_requested.connect(self._next_fullscreen_news)
         self.hud.on_card_open_fullscreen = self._open_fullscreen_news
+        self._news_cmd_sig.connect(self._handle_news_cmd)
 
         # Camera preview overlay (child of central widget, positioned in resizeEvent)
         self._cam_preview = _CameraPreview(self.centralWidget())
@@ -5193,6 +5190,39 @@ class MainWindow(QMainWindow):
             self._fullscreen_news_modal.show_article(t, item_text, self._current_news_idx + 1, len(self._news_items))
             _play_jarvis_transition_sound()
 
+    def _handle_news_cmd(self, action: str, index: int = 0):
+        if action == "close":
+            self.close_all_news()
+        elif action == "open":
+            self.open_news_fullscreen(index)
+
+    def close_all_news(self):
+        self.floating_news = [] if hasattr(self, 'floating_news') else []
+        self.hud.floating_news = []
+        if hasattr(self, '_fullscreen_news_modal'):
+            self._fullscreen_news_modal.hide_modal()
+        if hasattr(self, '_content_panel'):
+            self._content_panel.hide()
+        _play_jarvis_hologram_sound()
+        self.hud.show_gesture_feedback("◈ ALL NEWS CLOSED ✕")
+        self.hud.update()
+
+    def open_news_fullscreen(self, index: int = 0) -> bool:
+        if not hasattr(self, '_news_items') or not self._news_items:
+            return False
+        idx = max(0, min(len(self._news_items) - 1, index))
+        self._current_news_idx = idx
+        item_text = self._news_items[idx]
+        lines = [l.strip(" #*-•") for l in item_text.splitlines() if l.strip()]
+        title = lines[0] if lines else f"News #{idx+1}"
+        cw = self.centralWidget()
+        self._fullscreen_news_modal.setGeometry(12, 12, cw.width() - 24, cw.height() - 24)
+        self._fullscreen_news_modal.show_article(title, item_text, idx + 1, len(self._news_items))
+        _play_jarvis_transition_sound()
+        self.hud.show_gesture_feedback(f"◈ FULLSCREEN: {title[:16]} 📂")
+        self.hud.glance(0.0, -0.6, hold=1.2)
+        return True
+
     def _close_content_panel(self):
         if hasattr(self, '_content_panel'):
             self._content_panel.hide()
@@ -6435,6 +6465,14 @@ class JarvisUI:
     def show_content(self, title: str, text: str):
         """Thread-safe: display content in the panel below the HUD."""
         self._win._content_sig.emit(title[:48], text[:4000])
+
+    def close_all_news(self) -> None:
+        """Thread-safe: close and dismiss all news widgets from screen."""
+        self._win._news_cmd_sig.emit("close", 0)
+
+    def open_news_fullscreen(self, index: int = 0) -> None:
+        """Thread-safe: open the specified news card in full screen."""
+        self._win._news_cmd_sig.emit("open", int(index))
 
     def show_quiz(self, topic: str, questions, grade=None) -> None:
         """Thread-safe: put an interactive quiz on the board.

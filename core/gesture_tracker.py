@@ -148,14 +148,15 @@ class GestureTracker:
                     curr_x, curr_y = palm.x, palm.y
 
                     # Finger keypoints
-                    idx_tip = lms[8]
-                    idx_dip = lms[6]
-                    mid_tip = lms[12]
-                    mid_dip = lms[10]
-                    rng_tip = lms[16]
-                    rng_dip = lms[14]
-                    pnk_tip = lms[20]
-                    pnk_dip = lms[18]
+                    thumb_tip = lms[4]
+                    idx_tip   = lms[8]
+                    idx_dip   = lms[6]
+                    mid_tip   = lms[12]
+                    mid_dip   = lms[10]
+                    rng_tip   = lms[16]
+                    rng_dip   = lms[14]
+                    pnk_tip   = lms[20]
+                    pnk_dip   = lms[18]
 
                     # Detect extended fingers (relative to DIP joints)
                     idx_ext = idx_tip.y < idx_dip.y
@@ -163,15 +164,18 @@ class GestureTracker:
                     rng_ext = rng_tip.y < rng_dip.y
                     pnk_ext = pnk_tip.y < pnk_dip.y
 
-                    is_full_hand   = idx_ext and mid_ext and rng_ext and pnk_ext
-                    is_index_pinky = idx_ext and pnk_ext and not mid_ext and not rng_ext  # 🤘 Pick news with Index + Last Finger
-                    is_2finger     = idx_ext and mid_ext and not rng_ext and not pnk_ext  # ✌️ 2-finger open
-                    is_1finger     = idx_ext and not mid_ext and not rng_ext and not pnk_ext # ☝️ 1-finger point
+                    # Index + Thumb Pinch Distance (🤏 Picking something with Index & Thumb)
+                    pinch_dist = math.hypot(idx_tip.x - thumb_tip.x, idx_tip.y - thumb_tip.y)
+                    is_pinch   = pinch_dist < 0.082
 
-                    # 1. Check for Index Finger + Last Finger (Pinky 🤘) -> PICK / GRAB & MOVE NEWS
-                    if is_index_pinky:
-                        raw_px = (idx_tip.x + pnk_tip.x) / 2.0
-                        raw_py = (idx_tip.y + pnk_tip.y) / 2.0
+                    is_full_hand   = idx_ext and mid_ext and rng_ext and pnk_ext
+                    is_2finger     = idx_ext and mid_ext and not rng_ext and not pnk_ext  # ✌️ 2-finger open
+                    is_1finger     = idx_ext and not mid_ext and not rng_ext and not pnk_ext
+
+                    # 1. Pinch to Pick: Index Finger + Thumb Pinch (🤏 Pick & Drag News)
+                    if is_pinch:
+                        raw_px = (idx_tip.x + thumb_tip.x) / 2.0
+                        raw_py = (idx_tip.y + thumb_tip.y) / 2.0
                         if self._smooth_px is None:
                             self._smooth_px, self._smooth_py = raw_px, raw_py
                         else:
@@ -184,7 +188,7 @@ class GestureTracker:
                             except Exception:
                                 pass
 
-                    # 2. Check for 2-Fingers Extended (Index + Middle ✌️) -> OPEN NEWS
+                    # 2. 2-Fingers Extended (Index + Middle ✌️) -> OPEN NEWS
                     elif is_2finger:
                         if now - self._last_open_time > 0.65:
                             self._last_open_time = now
@@ -194,7 +198,7 @@ class GestureTracker:
                                 except Exception:
                                     pass
 
-                    # 3. Check for 1-Finger Pointing (Index ☝️) -> MOVE / DRAG NEWS
+                    # 3. 1-Finger Pointing (Index ☝️) -> Point / Move
                     elif is_1finger:
                         raw_px, raw_py = idx_tip.x, idx_tip.y
                         if self._smooth_px is None:
@@ -239,6 +243,17 @@ class GestureTracker:
                                                 self.on_swipe(direction)
                                             except Exception:
                                                 pass
+
+                    # If fingers are open and not pinching, release any dragged card
+                    else:
+                        if self._smooth_px is not None:
+                            if self.on_finger_pointer:
+                                try:
+                                    self.on_finger_pointer(self._smooth_px, self._smooth_py, "release")
+                                except Exception:
+                                    pass
+                            self._smooth_px = None
+                            self._smooth_py = None
 
                     # Smooth avatar glance pan
                     if self.on_pan and (is_full_hand or is_index_pinky or is_1finger):
