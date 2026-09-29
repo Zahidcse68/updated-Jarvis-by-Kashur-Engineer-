@@ -168,9 +168,7 @@ class GestureTracker:
                     pinch_dist = math.hypot(idx_tip.x - thumb_tip.x, idx_tip.y - thumb_tip.y)
                     is_pinch   = pinch_dist < 0.082
 
-                    is_full_hand   = idx_ext and mid_ext and rng_ext and pnk_ext
-                    is_2finger     = idx_ext and mid_ext and not rng_ext and not pnk_ext  # ✌️ 2-finger open
-                    is_1finger     = idx_ext and not mid_ext and not rng_ext and not pnk_ext
+                    is_full_hand = idx_ext and mid_ext and rng_ext and pnk_ext
 
                     # 1. Pinch to Pick: Index Finger + Thumb Pinch (🤏 Pick & Drag News)
                     if is_pinch:
@@ -188,32 +186,7 @@ class GestureTracker:
                             except Exception:
                                 pass
 
-                    # 2. 2-Fingers Extended (Index + Middle ✌️) -> OPEN NEWS
-                    elif is_2finger:
-                        if now - self._last_open_time > 0.65:
-                            self._last_open_time = now
-                            if self.on_finger_pointer:
-                                try:
-                                    self.on_finger_pointer(idx_tip.x, idx_tip.y, "open_2finger")
-                                except Exception:
-                                    pass
-
-                    # 3. 1-Finger Pointing (Index ☝️) -> Point / Move
-                    elif is_1finger:
-                        raw_px, raw_py = idx_tip.x, idx_tip.y
-                        if self._smooth_px is None:
-                            self._smooth_px, self._smooth_py = raw_px, raw_py
-                        else:
-                            self._smooth_px += (raw_px - self._smooth_px) * 0.45
-                            self._smooth_py += (raw_py - self._smooth_py) * 0.45
-
-                        if self.on_finger_pointer:
-                            try:
-                                self.on_finger_pointer(self._smooth_px, self._smooth_py, "move")
-                            except Exception:
-                                pass
-
-                    # 4. FULL HAND SWIPE ONLY: When all fingers are open (🖐️ full palm), fast swipe switches HUD
+                    # 2. FULL HAND SWIPE ONLY: When all fingers are open (🖐️ full palm), fast swipe switches HUD
                     elif is_full_hand:
                         self._smooth_px = None
                         self._smooth_py = None

@@ -645,9 +645,7 @@ class HudCanvas(QWidget):
     def on_camera_finger_pointer(self, norm_x: float, norm_y: float, action: str) -> None:
         """
         Handle camera fingertip pointer events:
-        - 'pick' (Index + Last Finger Pinky 🤘): Smoothly grab & drag floating news cards.
-        - 'move' (1 finger pointing ☝️): Smoothly drag floating news cards.
-        - 'open_2finger' (2 fingers ✌️): Opens & expands the targeted news card.
+        - 'pick' (Index + Thumb Pinch 🤏): Smoothly grab & drag floating news cards.
         - 'release': Drops dragged card; expands if over OPEN ZONE, deletes if in TRASH ZONE.
         """
         W, H = max(400, self.width()), max(300, self.height())
@@ -678,30 +676,8 @@ class HudCanvas(QWidget):
         self._finger_pos = (px, py)
         self._finger_action = action
 
-        if action == "open_2finger":
-            # 2-Finger Open Gesture ✌️
-            matched_card = None
-            for card in reversed(self.floating_news):
-                rx, ry, rw, rh = card['x'], card['y'], card['w'], card['h']
-                if rx - 25 <= px <= rx + rw + 25 and ry - 25 <= py <= ry + rh + 25:
-                    matched_card = card
-                    break
-            if matched_card is None and self.floating_news:
-                nearest = min(self.floating_news, key=lambda c: math.hypot(px - (c['x'] + c['w'] / 2.0), py - (c['y'] + c['h'] / 2.0)))
-                if math.hypot(px - (nearest['x'] + nearest['w'] / 2.0), py - (nearest['y'] + nearest['h'] / 2.0)) < 180.0:
-                    matched_card = nearest
-
-            if matched_card:
-                _play_jarvis_transition_sound()
-                self.show_gesture_feedback(f"◈ 2-FINGER OPEN: {matched_card['title'][:16]} ✌️")
-                self.glance(0.0, -0.6, hold=1.0)
-                if callable(getattr(self, 'on_card_open_fullscreen', None)):
-                    self.on_card_open_fullscreen(matched_card)
-                elif callable(getattr(self, 'on_card_click', None)):
-                    self.on_card_click(matched_card)
-
-        elif action in ("pick", "move"):
-            # Index + Last Finger Pick 🤘 or 1-Finger Drag ☝️ (Smooth LERP Target)
+        if action == "pick":
+            # Index + Thumb Pinch Pick (Smooth LERP Target)
             if not self._drag_card:
                 for card in reversed(self.floating_news):
                     rx, ry, rw, rh = card['x'], card['y'], card['w'], card['h']
