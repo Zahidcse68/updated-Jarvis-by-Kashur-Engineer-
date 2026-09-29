@@ -1101,23 +1101,23 @@ class HudCanvas(QWidget):
                 cw_c = card['w']
                 ch_c = card['h']
 
-                # Holographic Connector Arrow
+                # Holographic Connector Arrow (Small & Sleek)
                 if cx_c < cx:
-                    p_card = QPointF(cx_c + cw_c, cy_c + ch_c / 2.0)
-                    p_av   = QPointF(cx - 70, cy)
-                    p.setPen(QPen(qcol(C.PRI_DIM, 150), 1.2, Qt.PenStyle.DashLine))
-                    p.drawLine(p_card, p_av)
-                    p.setPen(QPen(qcol(C.PRI, 240), 1.6))
-                    p.drawLine(QLineF(p_card.x(), p_card.y(), p_card.x() + 7, p_card.y() - 5))
-                    p.drawLine(QLineF(p_card.x(), p_card.y(), p_card.x() + 7, p_card.y() + 5))
+                    # Left side card pointing right towards center (─▷)
+                    ax = cx_c + cw_c + 2.0
+                    ay = cy_c + ch_c / 2.0
+                    p.setPen(QPen(qcol(C.PRI, 220), 1.2))
+                    p.drawLine(QLineF(ax, ay, ax + 8.0, ay))
+                    p.drawLine(QLineF(ax + 8.0, ay, ax + 5.0, ay - 3.0))
+                    p.drawLine(QLineF(ax + 8.0, ay, ax + 5.0, ay + 3.0))
                 else:
-                    p_card = QPointF(cx_c, cy_c + ch_c / 2.0)
-                    p_av   = QPointF(cx + 70, cy)
-                    p.setPen(QPen(qcol(C.PRI_DIM, 150), 1.2, Qt.PenStyle.DashLine))
-                    p.drawLine(p_card, p_av)
-                    p.setPen(QPen(qcol(C.PRI, 240), 1.6))
-                    p.drawLine(QLineF(p_card.x(), p_card.y(), p_card.x() - 7, p_card.y() - 5))
-                    p.drawLine(QLineF(p_card.x(), p_card.y(), p_card.x() - 7, p_card.y() + 5))
+                    # Right side card pointing left towards center (◁─)
+                    ax = cx_c - 2.0
+                    ay = cy_c + ch_c / 2.0
+                    p.setPen(QPen(qcol(C.PRI, 220), 1.2))
+                    p.drawLine(QLineF(ax, ay, ax - 8.0, ay))
+                    p.drawLine(QLineF(ax - 8.0, ay, ax - 5.0, ay - 3.0))
+                    p.drawLine(QLineF(ax - 8.0, ay, ax - 5.0, ay + 3.0))
 
                 # Transparent Glass Card
                 is_dragged = (card == self._drag_card)

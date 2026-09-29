@@ -159,8 +159,12 @@ class GestureTracker:
                     rng_ext = rng_tip.y < rng_dip.y
                     pnk_ext = pnk_tip.y < pnk_dip.y
 
+                    is_full_hand = idx_ext and mid_ext and rng_ext and pnk_ext
+                    is_2finger   = idx_ext and mid_ext and not rng_ext and not pnk_ext
+                    is_1finger   = idx_ext and not mid_ext and not rng_ext
+
                     # 1. Check for 2-Fingers Extended (Index + Middle up, Ring + Pinky down) -> OPEN NEWS
-                    if idx_ext and mid_ext and not rng_ext and not pnk_ext:
+                    if is_2finger:
                         if now - self._last_open_time > 0.65:
                             self._last_open_time = now
                             if self.on_finger_pointer:
@@ -170,49 +174,50 @@ class GestureTracker:
                                     pass
 
                     # 2. Check for 1-Finger Pointing (Index up, others folded) -> MOVE / DRAG NEWS
-                    elif idx_ext and not mid_ext and not rng_ext:
+                    elif is_1finger:
                         if self.on_finger_pointer:
                             try:
                                 self.on_finger_pointer(idx_tip.x, idx_tip.y, "move")
                             except Exception:
                                 pass
 
-                    # 3. Whole hand lateral swipe velocity for HUD animation switching
-                    if self._last_x is not None and self._last_y is not None:
-                        dt = now - self._last_pos_time
-                        if 0.015 < dt < 0.35:
-                            dx = curr_x - self._last_x
-                            dy = curr_y - self._last_y
-                            vel_x = dx / dt
-                            vel_y = dy / dt
+                    # 3. FULL HAND SWIPE ONLY: When all fingers are open (🖐️ full palm), fast swipe switches HUD
+                    elif is_full_hand:
+                        if self._last_x is not None and self._last_y is not None:
+                            dt = now - self._last_pos_time
+                            if 0.015 < dt < 0.35:
+                                dx = curr_x - self._last_x
+                                dy = curr_y - self._last_y
+                                vel_x = dx / dt
+                                vel_y = dy / dt
 
-                            # Swipe threshold (fast hand displacement)
-                            if now - self._last_swipe_time > self._swipe_cooldown:
-                                if abs(vel_x) > 1.35 and abs(vel_x) > abs(vel_y) * 1.3:
-                                    direction = "right" if vel_x > 0 else "left"
-                                    self._last_swipe_time = now
-                                    if self.on_swipe:
-                                        try:
-                                            self.on_swipe(direction)
-                                        except Exception:
-                                            pass
-                                elif abs(vel_y) > 1.45 and abs(vel_y) > abs(vel_x) * 1.3:
-                                    direction = "down" if vel_y > 0 else "up"
-                                    self._last_swipe_time = now
-                                    if self.on_swipe:
-                                        try:
-                                            self.on_swipe(direction)
-                                        except Exception:
-                                            pass
+                                # Swipe threshold (fast full hand displacement)
+                                if now - self._last_swipe_time > self._swipe_cooldown:
+                                    if abs(vel_x) > 1.50 and abs(vel_x) > abs(vel_y) * 1.3:
+                                        direction = "right" if vel_x > 0 else "left"
+                                        self._last_swipe_time = now
+                                        if self.on_swipe:
+                                            try:
+                                                self.on_swipe(direction)
+                                            except Exception:
+                                                pass
+                                    elif abs(vel_y) > 1.60 and abs(vel_y) > abs(vel_x) * 1.3:
+                                        direction = "down" if vel_y > 0 else "up"
+                                        self._last_swipe_time = now
+                                        if self.on_swipe:
+                                            try:
+                                                self.on_swipe(direction)
+                                            except Exception:
+                                                pass
 
-                            # Smooth avatar glance pan
-                            if self.on_pan:
-                                try:
-                                    pan_x = (curr_x - 0.5) * 2.0
-                                    pan_y = (curr_y - 0.5) * 2.0
-                                    self.on_pan(pan_x, pan_y)
-                                except Exception:
-                                    pass
+                    # Smooth avatar glance pan
+                    if self.on_pan:
+                        try:
+                            pan_x = (curr_x - 0.5) * 2.0
+                            pan_y = (curr_y - 0.5) * 2.0
+                            self.on_pan(pan_x, pan_y)
+                        except Exception:
+                            pass
 
                     self._last_x = curr_x
                     self._last_y = curr_y
